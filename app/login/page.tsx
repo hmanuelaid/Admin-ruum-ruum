@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
 import { useAuthStore } from '@/lib/store'
 
 export default function LoginPage() {
@@ -13,11 +14,22 @@ export default function LoginPage() {
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
-    if (!email || !password) return
     setLoading(true); setError('')
-    await new Promise(r => setTimeout(r, 700))
-    if (password.length < 4) { setError('Credenciales incorrectas'); setLoading(false); return }
-    setAdmin({ id: 'adm_001', name: 'Super Admin', email, role: 'super_admin' })
+    const supabase = createClient()
+
+    const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    if (authError) { setError('Credenciales incorrectas'); setLoading(false); return }
+
+    // Buscar perfil en admin_users
+    const { data: admin } = await supabase
+      .from('admin_users')
+      .select('*')
+      .eq('auth_id', data.user.id)
+      .single()
+
+    if (!admin) { setError('No tienes acceso como administrador'); setLoading(false); return }
+
+    setAdmin({ id: admin.id, name: admin.name, email: admin.email, role: admin.role })
     router.replace('/dashboard')
   }
 
@@ -31,9 +43,7 @@ export default function LoginPage() {
             <p className="muted" style={{ fontSize: 12 }}>Panel operativo · MoviliaX</p>
           </div>
         </div>
-
         <div className="divider" />
-
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="field-group">
             <label className="field-label">Correo electrónico</label>
@@ -46,11 +56,12 @@ export default function LoginPage() {
               value={password} onChange={e => setPassword(e.target.value)} required />
           </div>
           {error && <p style={{ fontSize: 12, color: 'var(--danger)' }}>{error}</p>}
-          <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '.75rem' }} disabled={loading}>
+          <button type="submit" className="btn-primary"
+            style={{ width: '100%', justifyContent: 'center', padding: '.75rem' }}
+            disabled={loading}>
             {loading ? 'Entrando…' : 'Iniciar sesión'}
           </button>
         </form>
-
         <p className="muted" style={{ fontSize: 12, textAlign: 'center' }}>
           Acceso restringido al equipo MoviliaX
         </p>
