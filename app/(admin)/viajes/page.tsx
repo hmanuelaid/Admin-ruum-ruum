@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Chip } from '@/components/ui/Chip'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
@@ -19,42 +19,79 @@ const PENDING = ['solicitud_recibida','pendiente_revision','pendiente_asignacion
 const ACTIVE  = ['conductor_asignado','conductor_en_camino','recoleccion_proceso',
   'evidencia_inicial_pendiente','traslado_curso','entrega_proceso','evidencia_final_pendiente']
 
+interface AdminTrip {
+  id: string
+  status: string
+  driver_id: string | null
+  vehicle_brand: string | null
+  vehicle_model: string | null
+  vehicle_plates: string | null
+  origin_address: string | null
+  destination_address: string | null
+  client_price_mxn: number | null
+  app_users: {
+    name: string | null
+    email: string | null
+    type: string | null
+  } | null
+}
+
+interface DriverOption {
+  id: string
+  name: string
+  status: string
+}
+
 export default function ViajesPage() {
   const [tab, setTab]         = useState<Tab>('Todos')
   const [search, setSearch]   = useState('')
-  const [trips, setTrips]     = useState<any[]>([])
-  const [drivers, setDrivers] = useState<any[]>([])
+  const [trips, setTrips]     = useState<AdminTrip[]>([])
+  const [drivers, setDrivers] = useState<DriverOption[]>([])
   const [loading, setLoading] = useState(true)
   const [assigning, setAssigning] = useState<string | null>(null)
   const { showToast } = useAppStore()
 
-  const loadData = useCallback(async () => {
-    setLoading(true)
-    const supabase = createClient()
+  useEffect(() => {
+    let cancelled = false
 
-    let query = supabase
+    async function loadData() {
+      const supabase = createClient()
+
+      let query = supabase
+        .from('trips')
+        .select(`*, app_users(name, email, type)`)
+        .order('created_at', { ascending: false })
+
+      if (tab === 'Pendientes')  query = query.in('status', PENDING)
+      if (tab === 'En curso')    query = query.in('status', ACTIVE)
+      if (tab === 'Finalizados') query = query.eq('status', 'finalizado')
+      if (tab === 'Cancelados')  query = query.eq('status', 'cancelado')
+      if (tab === 'Incidencias') query = query.eq('status', 'incidente')
+
+      const { data: tripsData } = await query
+      const { data: driversData } = await supabase
+        .from('drivers')
+        .select('id, name, status')
+        .in('status', ['disponible', 'activo'])
+
+      if (cancelled) return
+      setTrips((tripsData ?? []) as AdminTrip[])
+      setDrivers((driversData ?? []) as DriverOption[])
+      setLoading(false)
+    }
+
+    void loadData()
+    return () => { cancelled = true }
+  }, [tab])
+
+  async function refreshData() {
+    const supabase = createClient()
+    const { data: tripsData } = await supabase
       .from('trips')
       .select(`*, app_users(name, email, type)`)
       .order('created_at', { ascending: false })
-
-    if (tab === 'Pendientes')  query = query.in('status', PENDING)
-    if (tab === 'En curso')    query = query.in('status', ACTIVE)
-    if (tab === 'Finalizados') query = query.eq('status', 'finalizado')
-    if (tab === 'Cancelados')  query = query.eq('status', 'cancelado')
-    if (tab === 'Incidencias') query = query.eq('status', 'incidente')
-
-    const { data: tripsData } = await query
-    const { data: driversData } = await supabase
-      .from('drivers')
-      .select('id, name, status')
-      .in('status', ['disponible', 'activo'])
-
-    setTrips(tripsData ?? [])
-    setDrivers(driversData ?? [])
-    setLoading(false)
-  }, [tab])
-
-  useEffect(() => { loadData() }, [loadData])
+    setTrips((tripsData ?? []) as AdminTrip[])
+  }
 
   async function assignDriver(tripId: string, driverId: string) {
     setAssigning(tripId)
@@ -68,14 +105,14 @@ export default function ViajesPage() {
     await supabase.from('drivers').update({ status: 'en_viaje' }).eq('id', driverId)
     showToast('Conductor asignado ✓')
     setAssigning(null)
-    loadData()
+    refreshData()
   }
 
   async function changeStatus(tripId: string, status: string) {
     const supabase = createClient()
     await supabase.from('trips').update({ status }).eq('id', tripId)
     showToast('Estatus actualizado ✓')
-    loadData()
+    refreshData()
   }
 
   const filtered = trips.filter(t =>
