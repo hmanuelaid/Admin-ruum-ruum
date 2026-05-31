@@ -4,6 +4,7 @@ import { Chip } from '@/components/ui/Chip'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import type { DriverStatus } from '@/lib/types'
+import { useRouter } from 'next/navigation'
 
 const STATUS_LABELS: Record<string, string> = {
   disponible: 'Disponible', en_viaje: 'En viaje',
@@ -11,7 +12,7 @@ const STATUS_LABELS: Record<string, string> = {
   no_disponible: 'No disponible', suspendido: 'Suspendido',
   bloqueado: 'Bloqueado', documentacion_vencida: 'Doc. vencida',
 }
-
+const router = useRouter()
 interface DriverRow {
   id: string
   name: string | null
@@ -238,6 +239,8 @@ export default function ConductoresPage() {
                       <button className="btn-primary" style={{ fontSize: 12, padding: '4px 10px' }}
                         onClick={() => showToast(`Validando a ${d.name ?? 'conductor'}…`)}>Validar</button>
                     )}
+                    <button className="btn" style={{ fontSize: 12, padding: '4px 10px' }}
+                      onClick={() => router.push(`/conductores/${d.id}`)}>Ir al perfil</button>
                   </div>
                 </td>
               </tr>
