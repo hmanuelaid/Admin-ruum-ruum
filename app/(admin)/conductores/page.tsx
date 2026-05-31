@@ -1,86 +1,171 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Chip } from '@/components/ui/Chip'  // ← asegurar import
-import { createClient } from '@/lib/supabase'
+import { useAppStore } from '@/lib/store'
 
-interface Driver {
-  id: string
-  name: string
-  email: string
-  phone: string
-  status: string
-  certified: boolean
-  rating: number
-  trips_completed: number
-  earnings: number
-  created_at: string
+const STATUS_LABELS: Record<string, string> = {
+  disponible: 'Disponible', en_viaje: 'En viaje',
+  pendiente_validacion: 'Pendiente', activo: 'Activo',
+  no_disponible: 'No disponible', suspendido: 'Suspendido',
+  bloqueado: 'Bloqueado', documentacion_vencida: 'Doc. vencida',
 }
 
+const mockDrivers = [
+  {
+    id: '1',
+    name: 'Juan Pérez',
+    phone: '5512345678',
+    email: 'juan.perez@example.com',
+    state: 'CDMX',
+    rating: 4.9,
+    tripsCompleted: 124,
+    earnings: 18400,
+    certified: true,
+    status: 'disponible',
+  },
+  {
+    id: '2',
+    name: 'María López',
+    phone: '5523456789',
+    email: 'maria.lopez@example.com',
+    state: 'Jalisco',
+    rating: 4.7,
+    tripsCompleted: 98,
+    earnings: 15200,
+    certified: false,
+    status: 'pendiente_validacion',
+  },
+  {
+    id: '3',
+    name: 'Carlos Sánchez',
+    phone: '5534567890',
+    email: 'carlos.sanchez@example.com',
+    state: 'Nuevo León',
+    rating: 4.8,
+    tripsCompleted: 135,
+    earnings: 20150,
+    certified: true,
+    status: 'en_viaje',
+  },
+]
+
 export default function ConductoresPage() {
-  const [drivers, setDrivers] = useState<Driver[]>([])
-  const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const { showToast } = useAppStore()
 
-  useEffect(() => {
-    loadDrivers()
-  }, [])
-
-  async function loadDrivers() {
-    const supabase = createClient()
-    const { data, error } = await supabase
-      .from('drivers')
-      .select('*')
-      .order('created_at', { ascending: false })
-    
-    console.log('Drivers data:', data)  // ← ver en consola
-    console.log('Error:', error)
-    
-    setDrivers(data ?? [])
-    setLoading(false)
-  }
-
-  if (loading) return <div className="card">Cargando conductores...</div>
+  const drivers = mockDrivers.filter(d =>
+    !search ||
+    d.name.toLowerCase().includes(search.toLowerCase()) ||
+    d.phone.includes(search) ||
+    d.state.toLowerCase().includes(search.toLowerCase())
+  )
 
   return (
-    <div style={{ padding: 20 }}>
+    <>
       <div className="page-header">
-        <h1 className="page-title">Conductores</h1>
-        <p className="page-sub">{drivers.length} registrados</p>
+        <div>
+          <h1 className="page-title">Conductores</h1>
+          <p className="page-sub">{mockDrivers.length} conductores registrados</p>
+        </div>
+        <button className="btn-primary" onClick={() => showToast('Invitar conductor — próximamente')}>
+          + Agregar conductor
+        </button>
       </div>
 
-      {drivers.length === 0 ? (
-        <div className="card">No hay conductores registrados</div>
-      ) : (
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Nombre</th>
-                <th>Email</th>
-                <th>Teléfono</th>
-                <th>Estado</th>
-                <th>Viajes</th>
-                <th>Calificación</th>
-              </tr>
-            </thead>
-            <tbody>
-              {drivers.map(driver => (
-                <tr key={driver.id}>
-                  <td className="td-bold">{driver.name}</td>
-                  <td>{driver.email}</td>
-                  <td>{driver.phone || '—'}</td>
-                  <td>
-                    <span className={`chip chip-${driver.status === 'disponible' ? 'success' : 'warning'}`}>
-                      {driver.status}
-                    </span>
-                  </td>
-                  <td>{driver.trips_completed || 0}</td>
-                  <td>{driver.rating || 0} ★</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Métricas */}
+      <div className="metrics-grid">
+        {[
+          { label: 'Total', value: mockDrivers.length, icon: '👥', color: 'var(--primary-dim)' },
+          { label: 'Disponibles', value: mockDrivers.filter(d => d.status === 'disponible').length, icon: '✅', color: 'rgba(34,197,94,.12)' },
+          { label: 'En viaje', value: mockDrivers.filter(d => d.status === 'en_viaje').length, icon: '🚗', color: 'rgba(56,189,248,.12)' },
+          { label: 'Pendientes', value: mockDrivers.filter(d => d.status === 'pendiente_validacion').length, icon: '⏳', color: 'rgba(245,158,11,.12)' },
+        ].map(m => (
+          <div key={m.label} className="metric-card">
+            <div className="icon" style={{ background: m.color }}>{m.icon}</div>
+            <p className="value">{m.value}</p>
+            <p className="label">{m.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filtros */}
+      <div className="filters-bar">
+        <div className="filter-search">
+          <svg viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input placeholder="Buscar por nombre, teléfono o estado…"
+            value={search} onChange={e => setSearch(e.target.value)} />
         </div>
-      )}
-    </div>
+        <select className="filter-select">
+          <option>Cualquier estatus</option>
+          {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <select className="filter-select">
+          <option>Cualquier estado</option>
+          <option>CDMX</option><option>Jalisco</option>
+          <option>Nuevo León</option><option>Quintana Roo</option>
+        </select>
+      </div>
+
+      {/* Tabla */}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Conductor</th><th>Contacto</th><th>Estado</th>
+              <th>Calificación</th><th>Viajes</th><th>Ganancias</th>
+              <th>Certificado</th><th>Estatus</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {drivers.map(d => (
+              <tr key={d.id}>
+                <td>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'var(--surface-2)', display: 'grid', placeItems: 'center', flexShrink: 0, border: '1px solid var(--border)' }}>
+                      🧑
+                    </div>
+                    <p className="td-bold">{d.name}</p>
+                  </div>
+                </td>
+                <td>
+                  <p style={{ fontSize: 13 }}>{d.phone}</p>
+                  <span className="td-muted">{d.email}</span>
+                </td>
+                <td className="td-muted">{d.state}</td>
+                <td>
+                  {d.rating > 0
+                    ? <span style={{ fontWeight: 600 }}>⭐ {d.rating}</span>
+                    : <span className="td-muted">—</span>}
+                </td>
+                <td className="td-bold">{d.tripsCompleted}</td>
+                <td className="td-bold">
+                  {d.earnings > 0
+                    ? `$${d.earnings.toLocaleString('es-MX')}`
+                    : <span className="td-muted">—</span>}
+                </td>
+                <td>
+                  {d.certified
+                    ? <Chip variant="success">✓ Cert.</Chip>
+                    : <Chip variant="warning">Pendiente</Chip>}
+                </td>
+                <td><Chip status={d.status}>{STATUS_LABELS[d.status]}</Chip></td>
+                <td>
+                  <div className="td-actions">
+                    <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }}
+                      onClick={() => showToast(`Perfil de ${d.name}`)}>Ver</button>
+                    {d.status === 'pendiente_validacion' && (
+                      <button className="btn-primary" style={{ fontSize: 12, padding: '4px 10px' }}
+                        onClick={() => showToast(`Validando a ${d.name}…`)}>Validar</button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   )
 }
