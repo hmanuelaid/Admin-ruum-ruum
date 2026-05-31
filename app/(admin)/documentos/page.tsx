@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useAppStore } from '@/lib/store'
 
 type DocStatus = 'en_revision' | 'aprobado' | 'rechazado' | 'pendiente_carga' | 'vencido'
 
@@ -35,6 +36,11 @@ const DOC_LABELS: Record<string, string> = {
   rfc:           'RFC',
 }
 
+const REQUIRED_DOCS: Record<Document['owner_type'], string[]> = {
+  user: ['ine', 'comprobante'],
+  driver: ['ine', 'licencia', 'comprobante', 'antecedentes', 'foto_perfil'],
+}
+
 type FilterTab = 'todos' | 'en_revision' | 'aprobado' | 'rechazado'
 
 export default function DocumentosAdminPage() {
@@ -45,16 +51,59 @@ export default function DocumentosAdminPage() {
   const [rejectNotes, setRejectNotes] = useState('')
   const [processing, setProcessing] = useState(false)
   const [search, setSearch]         = useState('')
+  const { showToast } = useAppStore()
 
-  const supabase = createClient()
+  async function syncOwnerValidation(doc: Document) {
+    const supabase = createClient()
+    const required = REQUIRED_DOCS[doc.owner_type]
+    const { data, error } = await supabase
+      .from('documents')
+      .select('type, status')
+      .eq('owner_id', doc.owner_id)
+      .eq('owner_type', doc.owner_type)
+      .in('type', required)
+
+    if (error) {
+      showToast(`Documento aprobado, pero no se pudo validar al owner: ${error.message}`)
+      return
+    }
+
+    const approvedTypes = new Set(
+      (data ?? [])
+        .filter(item => item.status === 'aprobado')
+        .map(item => item.type)
+    )
+    const allApproved = required.every(type => approvedTypes.has(type))
+
+    if (!allApproved) return
+
+    if (doc.owner_type === 'driver') {
+      const { error: driverError } = await supabase
+        .from('drivers')
+        .update({ status: 'activo' })
+        .eq('id', doc.owner_id)
+
+      if (driverError) showToast(`Documentos completos, pero no se activo el conductor: ${driverError.message}`)
+    } else {
+      const { error: userError } = await supabase
+        .from('app_users')
+        .update({ status: 'activo' })
+        .eq('id', doc.owner_id)
+
+      if (userError) showToast(`Documentos completos, pero no se activo el usuario: ${userError.message}`)
+    }
+  }
 
   // Carga inicial
   useEffect(() => {
+    const supabase = createClient()
+
     supabase
       .from('documents')
       .select('*')
       .order('uploaded_at', { ascending: false })
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) showToast(`No se pudieron cargar documentos: ${error.message}`)
         setDocs((data as Document[]) ?? [])
         setLoading(false)
       })
@@ -81,12 +130,13 @@ export default function DocumentosAdminPage() {
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [])
+  }, [showToast])
 
   // Aprobar
   async function handleApprove(doc: Document) {
     setProcessing(true)
-    await supabase
+    const supabase = createClient()
+    const { error } = await supabase
       .from('documents')
       .update({
         status: 'aprobado',
@@ -95,16 +145,28 @@ export default function DocumentosAdminPage() {
       })
       .eq('id', doc.id)
 
-    // Notificar al owner
-    await supabase.from('notifications').insert({
+    if (error) {
+      showToast(`No se pudo aprobar el documento: ${error.message}`)
+      setProcessing(false)
+      return
+    }
+
+    const { error: notificationError } = await supabase.from('notifications').insert({
       user_id:   doc.owner_id,
       user_type: doc.owner_type,
-      title:     '✅ Documento aprobado',
+      title:     'Documento aprobado',
       body:      `Tu ${DOC_LABELS[doc.type] ?? doc.type} fue aprobado correctamente.`,
       type:      'document',
       metadata:  { doc_id: doc.id, doc_type: doc.type },
     })
 
+    if (notificationError) {
+      showToast(`Documento aprobado, pero no se pudo notificar: ${notificationError.message}`)
+    } else {
+      showToast('Documento aprobado')
+    }
+
+    await syncOwnerValidation(doc)
     setProcessing(false)
     setSelected(null)
     setRejectNotes('')
@@ -114,7 +176,8 @@ export default function DocumentosAdminPage() {
   async function handleReject(doc: Document) {
     if (!rejectNotes.trim()) return
     setProcessing(true)
-    await supabase
+    const supabase = createClient()
+    const { error } = await supabase
       .from('documents')
       .update({
         status: 'rechazado',
@@ -123,14 +186,26 @@ export default function DocumentosAdminPage() {
       })
       .eq('id', doc.id)
 
-    await supabase.from('notifications').insert({
+    if (error) {
+      showToast(`No se pudo rechazar el documento: ${error.message}`)
+      setProcessing(false)
+      return
+    }
+
+    const { error: notificationError } = await supabase.from('notifications').insert({
       user_id:   doc.owner_id,
       user_type: doc.owner_type,
-      title:     '❌ Documento rechazado',
+      title:     'Documento rechazado',
       body:      `Tu ${DOC_LABELS[doc.type] ?? doc.type} fue rechazado. Motivo: ${rejectNotes.trim()}`,
       type:      'document',
       metadata:  { doc_id: doc.id, doc_type: doc.type, notes: rejectNotes.trim() },
     })
+
+    if (notificationError) {
+      showToast(`Documento rechazado, pero no se pudo notificar: ${notificationError.message}`)
+    } else {
+      showToast('Documento rechazado')
+    }
 
     setProcessing(false)
     setSelected(null)
@@ -491,7 +566,17 @@ export default function DocumentosAdminPage() {
                 </p>
                 <button
                   onClick={async () => {
-                    await supabase.from('documents').update({ status: 'en_revision', notes: null }).eq('id', selected.id)
+                    const supabase = createClient()
+                    const { error } = await supabase
+                      .from('documents')
+                      .update({ status: 'en_revision', notes: null, updated_at: new Date().toISOString() })
+                      .eq('id', selected.id)
+
+                    if (error) {
+                      showToast(`No se pudo volver a poner en revision: ${error.message}`)
+                    } else {
+                      showToast('Documento en revision')
+                    }
                   }}
                   style={{
                     marginTop: 8, background: 'none', border: 'none',

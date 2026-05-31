@@ -59,24 +59,35 @@ export function DocumentUploader({ doc, ownerId, ownerType, ownerName, onUploade
       return
     }
 
-    // Guardar en DB
     const supabase = createClient()
-    const { data: existing } = await supabase
+    const { data: existing, error: lookupError } = await supabase
       .from('documents')
       .select('id')
       .eq('owner_id', ownerId)
       .eq('type', doc.docType)
-      .single()
+      .maybeSingle()
+
+    if (lookupError) {
+      setError(`No se pudo consultar el documento: ${lookupError.message}`)
+      setUploading(false)
+      return
+    }
 
     if (existing) {
-      await supabase.from('documents').update({
+      const { error: updateError } = await supabase.from('documents').update({
         status: 'en_revision',
         url: result.url,
         uploaded_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq('id', existing.id)
+
+      if (updateError) {
+        setError(`El archivo subio, pero no se actualizo el registro: ${updateError.message}`)
+        setUploading(false)
+        return
+      }
     } else {
-      await supabase.from('documents').insert({
+      const { error: insertError } = await supabase.from('documents').insert({
         owner_id:   ownerId,
         owner_type: ownerType,
         owner_name: ownerName,
@@ -85,6 +96,12 @@ export function DocumentUploader({ doc, ownerId, ownerType, ownerName, onUploade
         url:        result.url,
         uploaded_at: new Date().toISOString(),
       })
+
+      if (insertError) {
+        setError(`El archivo subio, pero no se registro para revision: ${insertError.message}`)
+        setUploading(false)
+        return
+      }
     }
 
     setStatus('en_revision')

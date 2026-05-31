@@ -6,10 +6,16 @@ import type { DocStatus, DocumentItem } from '@/components/ui/DocumentUploader'
 
 export function useDocuments(ownerId: string | null, docTypes: { docType: string; label: string; required: boolean }[]) {
   const [docs, setDocs]       = useState<DocumentItem[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(Boolean(ownerId))
 
   useEffect(() => {
-    if (!ownerId) { setLoading(false); return }
+    if (!ownerId) {
+      queueMicrotask(() => {
+        setDocs([])
+        setLoading(false)
+      })
+      return
+    }
 
     const supabase = createClient()
     supabase
@@ -51,7 +57,7 @@ export function useDocuments(ownerId: string | null, docTypes: { docType: string
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  }, [ownerId])
+  }, [docTypes, ownerId])
 
   function updateDoc(updated: DocumentItem) {
     setDocs(prev => prev.map(d => d.docType === updated.docType ? updated : d))
