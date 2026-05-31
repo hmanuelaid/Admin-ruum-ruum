@@ -1,59 +1,86 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { Chip } from '@/components/ui/Chip'  // ← asegurar import
 import { createClient } from '@/lib/supabase'
 
+interface Driver {
+  id: string
+  name: string
+  email: string
+  phone: string
+  status: string
+  certified: boolean
+  rating: number
+  trips_completed: number
+  earnings: number
+  created_at: string
+}
+
 export default function ConductoresPage() {
-  const [drivers, setDrivers] = useState<any[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const [drivers, setDrivers] = useState<Driver[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function loadDrivers() {
-      try {
-        console.log('1. Iniciando carga...')
-        const supabase = createClient()
-        console.log('2. Supabase cliente creado')
-        
-        const { data, error } = await supabase
-          .from('drivers')
-          .select('*')
-        
-        console.log('3. Respuesta recibida:', { data, error })
-        
-        if (error) throw error
-        setDrivers(data || [])
-      } catch (err: any) {
-        console.error('Error:', err)
-        setError(err.message)
-      } finally {
-        setLoading(false)
-      }
-    }
-    
     loadDrivers()
   }, [])
 
+  async function loadDrivers() {
+    const supabase = createClient()
+    const { data, error } = await supabase
+      .from('drivers')
+      .select('*')
+      .order('created_at', { ascending: false })
+    
+    console.log('Drivers data:', data)  // ← ver en consola
+    console.log('Error:', error)
+    
+    setDrivers(data ?? [])
+    setLoading(false)
+  }
+
+  if (loading) return <div className="card">Cargando conductores...</div>
+
   return (
     <div style={{ padding: 20 }}>
-      <h1>Conductores - Diagnóstico</h1>
-      
-      {loading && <p>Cargando...</p>}
-      {error && <p style={{ color: 'red' }}>Error: {error}</p>}
-      
-      <div style={{ background: '#f0f0f0', padding: 10, margin: 10 }}>
-        <h3>Logs (ver consola F12):</h3>
-        <p>1. Abre F12 → Console</p>
-        <p>2. Recarga la página</p>
-        <p>3. Mira los logs con números</p>
+      <div className="page-header">
+        <h1 className="page-title">Conductores</h1>
+        <p className="page-sub">{drivers.length} registrados</p>
       </div>
-      
-      <h3>Datos encontrados: {drivers.length}</h3>
-      
-      {drivers.map(d => (
-        <div key={d.id} style={{ border: '1px solid #ccc', margin: 5, padding: 10 }}>
-          <strong>{d.name}</strong> - {d.email} - {d.status}
+
+      {drivers.length === 0 ? (
+        <div className="card">No hay conductores registrados</div>
+      ) : (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Email</th>
+                <th>Teléfono</th>
+                <th>Estado</th>
+                <th>Viajes</th>
+                <th>Calificación</th>
+              </tr>
+            </thead>
+            <tbody>
+              {drivers.map(driver => (
+                <tr key={driver.id}>
+                  <td className="td-bold">{driver.name}</td>
+                  <td>{driver.email}</td>
+                  <td>{driver.phone || '—'}</td>
+                  <td>
+                    <span className={`chip chip-${driver.status === 'disponible' ? 'success' : 'warning'}`}>
+                      {driver.status}
+                    </span>
+                  </td>
+                  <td>{driver.trips_completed || 0}</td>
+                  <td>{driver.rating || 0} ★</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      ))}
+      )}
     </div>
   )
 }
