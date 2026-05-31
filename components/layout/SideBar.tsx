@@ -1,8 +1,21 @@
 'use client'
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const NAV = [
+type NavItem = {
+  href: string
+  label: string
+  icon: ReactNode
+  badge?: number
+}
+
+type NavGroup = {
+  group: string
+  items: NavItem[]
+}
+
+const NAV: NavGroup[] = [
   {
     group: 'Operación',
     items: [
@@ -18,7 +31,7 @@ const NAV = [
     group: 'Finanzas',
     items: [
       { href: '/pagos', label: 'Pagos', icon: <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> },
-      { href: '/documentos', label: 'Documentos', badge: 4, icon: <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+      { href: '/documentos', label: 'Documentos', icon: '📄' },
       { href: '/tarifas', label: 'Tarifas', icon: <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
     ],
   },
