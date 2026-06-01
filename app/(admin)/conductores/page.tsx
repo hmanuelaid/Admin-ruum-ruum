@@ -12,7 +12,6 @@ const STATUS_LABELS: Record<string, string> = {
   no_disponible: 'No disponible', suspendido: 'Suspendido',
   bloqueado: 'Bloqueado', documentacion_vencida: 'Doc. vencida',
 }
-const router = useRouter()
 interface DriverRow {
   id: string
   name: string | null
@@ -36,6 +35,7 @@ export default function ConductoresPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const { showToast } = useAppStore()
+  const router = useRouter()
 
   useEffect(() => {
     let cancelled = false

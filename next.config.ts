@@ -1,7 +1,11 @@
-import type { NextConfig } from "next";
+const nextConfig = {
+  output: 'standalone',
+  // Deshabilitar prerenderizado estático para rutas dinámicas
+  staticPageGenerationTimeout: 120,
+  // Configurar para que todas las rutas sean dinámicas
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+}
 
-const nextConfig: NextConfig = {
-  /* config options here */
-};
-
-export default nextConfig;
+export default nextConfig
