@@ -205,9 +205,9 @@ export default function PagosPage() {
             {loading ? 'Cargando…' : `${payments.length} registros · ${metrics.pendientes} pendientes`}
           </p>
         </div>
-        <button className="btn-primary" onClick={() => showToast('Pago manual — próximamente')}>
-          + Pago manual
-        </button>
+          <button className="btn-primary" onClick={() => router.push('/pagos/nuevo')}>
+  + Pago manual
+</button>
       </div>
 
       {/* Métricas */}
