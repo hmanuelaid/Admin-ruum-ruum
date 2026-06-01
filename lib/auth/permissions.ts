@@ -35,7 +35,6 @@ type AdminNavItem = {
   label: string
   icon: AdminNavIcon
   roles: readonly AdminRole[]
-  badge?: number
 }
 
 type AdminNavGroup = {
@@ -151,10 +150,6 @@ export function getVisibleAdminNav(role: AdminRole): VisibleAdminNavGroup[] {
             href: item.href,
             label: item.label,
             icon: item.icon,
-          }
-
-          if ('badge' in item && typeof item.badge === 'number') {
-            visibleItem.badge = item.badge
           }
 
           return visibleItem

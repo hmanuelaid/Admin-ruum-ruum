@@ -140,7 +140,7 @@ export default function NuevoPagoPage() {
     <>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button className="btn-icon" onClick={() => router.back()} title="Regresar">
+          <button className="btn-icon" onClick={() => router.back()} title="Regresar" aria-label="Regresar">
             <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
             </svg>

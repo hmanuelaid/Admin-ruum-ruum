@@ -251,7 +251,7 @@ export default function TarifasPage() {
           <div className="card" style={{ width: '100%', maxWidth: 480, display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <p style={{ fontWeight: 700, fontSize: 16 }}>Editar tarifa — {editing.name}</p>
-              <button className="btn-icon" onClick={() => setEditing(null)}>✕</button>
+              <button className="btn-icon" onClick={() => setEditing(null)} aria-label="Cerrar editor">✕</button>
             </div>
 
             <div className="form-section">

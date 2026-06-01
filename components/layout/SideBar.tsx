@@ -43,7 +43,7 @@ export default function Sidebar({ navGroups }: Props) {
         {navGroups.map(({ group, items }) => (
           <div key={group} className="sidebar-group">
             <p className="sidebar-group-label">{group}</p>
-            {items.map(({ href, label, icon, badge }) => {
+            {items.map(({ href, label, icon }) => {
               const active = pathname === href || pathname.startsWith(`${href}/`)
 
               return (
@@ -52,7 +52,6 @@ export default function Sidebar({ navGroups }: Props) {
                   className={`nav-item${active ? ' is-active' : ''}`}>
                   {ADMIN_NAV_ICONS[icon]}
                   <span>{label}</span>
-                  {badge ? <span className="nav-badge">{badge}</span> : null}
                 </Link>
               )
             })}
