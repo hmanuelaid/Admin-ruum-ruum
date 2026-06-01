@@ -4,7 +4,7 @@ import { Chip } from '@/components/ui/Chip'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import type { TripStatus } from '@/lib/types'
-
+import { useRouter } from 'next/navigation'
 type Tab = 'Todos' | 'Pendientes' | 'En curso' | 'Finalizados' | 'Cancelados' | 'Incidencias'
 type Relation<T> = T | T[] | null
 
@@ -78,6 +78,7 @@ export default function ViajesPage() {
   const [assigning, setAssigning] = useState<string | null>(null)
   const [updating, setUpdating] = useState<string | null>(null)
   const { showToast } = useAppStore()
+  const router = useRouter()
 
   const loadData = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
@@ -344,6 +345,20 @@ export default function ViajesPage() {
                         : <span className="chip chip-warning">Sin conductor</span>
                     }
                   </td>
+                  <td>
+  <div className="td-actions">
+    <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }}
+      onClick={() => router.push(`/viajes/${trip.id}`)}>Ver</button>
+    <select className="filter-select" style={{ fontSize: 11 }}
+      value={status}
+      onChange={event => changeStatus(trip.id, event.target.value)}
+      disabled={updating === trip.id}>
+      {Object.entries(STATUS_LABELS).map(([key, value]) => (
+        <option key={key} value={key}>{value}</option>
+      ))}
+    </select>
+  </div>
+</td>
                   <td className="td-bold">{money(trip.client_price_mxn)}</td>
                   <td><Chip status={status || undefined}>{STATUS_LABELS[status] ?? 'Sin estatus'}</Chip></td>
                   <td>

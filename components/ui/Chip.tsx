@@ -22,8 +22,8 @@ const MAP: Record<string, string> = {
   activo_user: 'success',
 }
 
-export function Chip({ children, variant = 'default', status }:
-  { children?: React.ReactNode; variant?: string; status?: string }) {
+export function Chip({ children, variant = 'default', status, style, className }:
+  { children?: React.ReactNode; variant?: string; status?: string; style?: React.CSSProperties; className?: string }) {
   const v = status ? (MAP[status] ?? 'default') : variant
-  return <span className={`chip chip-${v}`}>{children}</span>
+  return <span className={`chip chip-${v}${className ? ` ${className}` : ''}`} style={style}>{children}</span>
 }
