@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
@@ -42,12 +42,6 @@ interface RecentActivity {
   icon: string
 }
 
-const ACTIVE_STATUSES = [
-  'conductor_asignado', 'conductor_en_camino', 'recoleccion_proceso',
-  'evidencia_inicial_pendiente', 'traslado_curso', 'entrega_proceso',
-  'evidencia_final_pendiente',
-]
-
 const STATUS_LABELS: Record<string, string> = {
   conductor_asignado: 'Conductor asignado', conductor_en_camino: 'En camino',
   recoleccion_proceso: 'Recolección', evidencia_inicial_pendiente: 'Ev. inicial',
@@ -67,6 +61,20 @@ function timeAgo(iso: string | null) {
   return `hace ${Math.floor(hrs / 24)}d`
 }
 
+type DashboardActivityRow = {
+  id: string
+  status: string | null
+  user_name: string | null
+  updated_at: string | null
+}
+
+type DashboardPayload = {
+  metrics?: Metrics
+  active?: ActiveTrip[]
+  upcoming?: ActiveTrip[]
+  activity?: DashboardActivityRow[]
+}
+
 // ── Componente ─────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
   const router = useRouter()
@@ -76,127 +84,86 @@ export default function DashboardPage() {
   const [alerts,   setAlerts]   = useState<Alert[]>([])
   const [activity, setActivity] = useState<RecentActivity[]>([])
   const [loading,  setLoading]  = useState(true)
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadDashboard = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
-    const supabase = createClient()
-    const todayStart = new Date()
-    todayStart.setHours(0, 0, 0, 0)
+    try {
+      const response = await fetch('/api/admin/dashboard', { cache: 'no-store' })
+      const payload = await response.json().catch(() => ({})) as DashboardPayload & { error?: string }
 
-    const [
-      activeTripsRes,
-      sinConductorRes,
-      finalizadosRes,
-      conductoresRes,
-      incidenciasRes,
-      docsRes,
-      pagosRes,
-      ingresosRes,
-      upcomingRes,
-      recentTripsRes,
-    ] = await Promise.all([
-      // Viajes activos
-      supabase.from('trips').select('id, status, origin_address, destination_address, vehicle_plates, updated_at, drivers(name), app_users(name)')
-        .in('status', ACTIVE_STATUSES).order('updated_at', { ascending: false }),
-      // Sin conductor
-      supabase.from('trips').select('id', { count: 'exact', head: true })
-        .in('status', ['solicitud_recibida', 'pendiente_revision', 'pendiente_asignacion']),
-      // Finalizados hoy
-      supabase.from('trips').select('id', { count: 'exact', head: true })
-        .eq('status', 'finalizado').gte('updated_at', todayStart.toISOString()),
-      // Conductores disponibles
-      supabase.from('drivers').select('id', { count: 'exact', head: true })
-        .in('status', ['disponible', 'activo']),
-      // Incidencias abiertas
-      supabase.from('incidents').select('id', { count: 'exact', head: true })
-        .in('status', ['nueva', 'en_revision', 'en_seguimiento', 'escalada']),
-      // Docs pendientes
-      supabase.from('documents').select('id', { count: 'exact', head: true })
-        .eq('status', 'en_revision'),
-      // Pagos pendientes
-      supabase.from('payments').select('id', { count: 'exact', head: true })
-        .in('status', ['pendiente', 'en_revision']),
-      // Ingresos hoy
-      supabase.from('payments').select('amount')
-        .eq('type', 'cobro_usuario').eq('status', 'pagado')
-        .gte('created_at', todayStart.toISOString()),
-      // Próximos programados
-      supabase.from('trips').select('id, status, origin_address, destination_address, vehicle_plates, scheduled_at, app_users(name)')
-        .eq('status', 'solicitud_recibida').not('scheduled_at', 'is', null)
-        .gte('scheduled_at', new Date().toISOString())
-        .order('scheduled_at', { ascending: true }).limit(5),
-      // Actividad reciente
-      supabase.from('trips').select('id, status, updated_at, app_users(name)')
-        .order('updated_at', { ascending: false }).limit(8),
-    ])
+      if (!response.ok) {
+        throw new Error(payload.error ?? 'No se pudo cargar el dashboard')
+      }
 
-    // Métricas
-    const ingresosHoy = (ingresosRes.data ?? []).reduce((sum, p) => sum + (p.amount ?? 0), 0)
-    setMetrics({
-      viajesActivos:        activeTripsRes.data?.length ?? 0,
-      sinConductor:         sinConductorRes.count ?? 0,
-      finalizadosHoy:       finalizadosRes.count ?? 0,
-      conductoresDisponibles: conductoresRes.count ?? 0,
-      incidenciasAbiertas:  incidenciasRes.count ?? 0,
-      docsPendientes:       docsRes.count ?? 0,
-      pagosPendientes:      pagosRes.count ?? 0,
-      ingresosHoy,
-    })
+      const nextMetrics = payload.metrics ?? {
+        viajesActivos: 0,
+        sinConductor: 0,
+        finalizadosHoy: 0,
+        conductoresDisponibles: 0,
+        incidenciasAbiertas: 0,
+        docsPendientes: 0,
+        pagosPendientes: 0,
+        ingresosHoy: 0,
+      }
 
-    // Viajes activos
-    type RawTrip = { id: string; status: string | null; origin_address: string | null; destination_address: string | null; vehicle_plates: string | null; updated_at?: string | null; drivers?: { name: string | null } | { name: string | null }[] | null; app_users?: { name: string | null } | { name: string | null }[] | null }
-    const toActive = (t: RawTrip): ActiveTrip => ({
-      id: t.id, status: t.status,
-      origin_address: t.origin_address,
-      destination_address: t.destination_address,
-      vehicle_plates: t.vehicle_plates,
-      updated_at: t.updated_at ?? null,
-      driver_name: (Array.isArray(t.drivers) ? t.drivers[0] : t.drivers)?.name ?? null,
-      user_name: (Array.isArray(t.app_users) ? t.app_users[0] : t.app_users)?.name ?? null,
-    })
-    setActive((activeTripsRes.data ?? []).map(t => toActive(t as RawTrip)))
-    setUpcoming((upcomingRes.data ?? []).map(t => toActive(t as RawTrip)))
+      setMetrics(nextMetrics)
+      setActive(payload.active ?? [])
+      setUpcoming(payload.upcoming ?? [])
 
-    // Alertas dinámicas
-    const newAlerts: Alert[] = []
-    if ((sinConductorRes.count ?? 0) > 0)
-      newAlerts.push({ id: 'sin-conductor', label: `${sinConductorRes.count} viajes sin conductor asignado`, level: 'danger', href: '/viajes' })
-    if ((incidenciasRes.count ?? 0) > 0)
-      newAlerts.push({ id: 'incidencias', label: `${incidenciasRes.count} incidencias abiertas`, level: 'danger', href: '/incidencias' })
-    if ((docsRes.count ?? 0) > 0)
-      newAlerts.push({ id: 'docs', label: `${docsRes.count} documentos en revisión`, level: 'warning', href: '/documentos' })
-    if ((pagosRes.count ?? 0) > 0)
-      newAlerts.push({ id: 'pagos', label: `${pagosRes.count} pagos pendientes de aprobación`, level: 'warning', href: '/pagos' })
-    setAlerts(newAlerts)
+      const newAlerts: Alert[] = []
+      if (nextMetrics.sinConductor > 0)
+        newAlerts.push({ id: 'sin-conductor', label: `${nextMetrics.sinConductor} viajes sin conductor asignado`, level: 'danger', href: '/viajes' })
+      if (nextMetrics.incidenciasAbiertas > 0)
+        newAlerts.push({ id: 'incidencias', label: `${nextMetrics.incidenciasAbiertas} incidencias abiertas`, level: 'danger', href: '/incidencias' })
+      if (nextMetrics.docsPendientes > 0)
+        newAlerts.push({ id: 'docs', label: `${nextMetrics.docsPendientes} documentos en revisión`, level: 'warning', href: '/documentos' })
+      if (nextMetrics.pagosPendientes > 0)
+        newAlerts.push({ id: 'pagos', label: `${nextMetrics.pagosPendientes} pagos pendientes de aprobación`, level: 'warning', href: '/pagos' })
+      setAlerts(newAlerts)
 
-    // Actividad reciente
-    setActivity((recentTripsRes.data ?? []).map(t => {
-      const userName = (Array.isArray(t.app_users) ? t.app_users[0] : t.app_users)?.name ?? 'Usuario'
-      return {
+      setActivity((payload.activity ?? []).map(t => ({
         id: t.id,
-        label: `Viaje de ${userName} → ${STATUS_LABELS[t.status ?? ''] ?? t.status}`,
+        label: `Viaje de ${t.user_name ?? 'Usuario'} → ${STATUS_LABELS[t.status ?? ''] ?? t.status}`,
         time: timeAgo(t.updated_at ?? null),
         icon: t.status === 'finalizado' ? '✅' : t.status === 'cancelado' ? '❌' : '🚗',
+      })))
+    } catch {
+      if (showLoading) {
+        setMetrics(null)
+        setActive([])
+        setUpcoming([])
+        setAlerts([])
+        setActivity([])
       }
-    }))
-
-    if (showLoading) setLoading(false)
+    } finally {
+      if (showLoading) setLoading(false)
+    }
   }, [])
 
   // Carga inicial + realtime
   useEffect(() => {
     queueMicrotask(() => void loadDashboard())
     const supabase = createClient()
+    const scheduleRefresh = () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current)
+      refreshTimer.current = setTimeout(() => {
+        void loadDashboard(false)
+      }, 1200)
+    }
 
     const channel = supabase.channel('dashboard-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' },    () => void loadDashboard(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' },  () => void loadDashboard(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' },() => void loadDashboard(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => void loadDashboard(false))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' },() => void loadDashboard(false))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'trips' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, scheduleRefresh)
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current)
+      supabase.removeChannel(channel)
+    }
   }, [loadDashboard])
 
   const m = metrics

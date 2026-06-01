@@ -46,7 +46,7 @@ export default function UsuariosPage() {
 
       const { data, error: loadError } = await supabase
         .from('app_users')
-        .select('*')
+        .select('id, name, email, phone, type, status, trips_count, created_at, company')
         .order('created_at', { ascending: false })
 
       if (cancelled) return

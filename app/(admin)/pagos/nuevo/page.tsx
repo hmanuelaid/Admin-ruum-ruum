@@ -113,7 +113,7 @@ export default function NuevoPagoPage() {
     const { data, error } = await supabase
       .from('payments')
       .insert(payload)
-      .select()
+      .select('id')
       .single()
 
     if (error) {

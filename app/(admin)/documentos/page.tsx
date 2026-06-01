@@ -1,7 +1,8 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
+import { getSignedStorageUrls, getStoragePath, isPdfPath } from '@/lib/storage'
 
 type DocStatus = 'en_revision' | 'aprobado' | 'rechazado' | 'pendiente_carga' | 'vencido'
 
@@ -13,6 +14,8 @@ interface Document {
   type: string
   status: DocStatus
   url?: string
+  storage_path?: string | null
+  mime_type?: string | null
   notes?: string
   uploaded_at?: string
   updated_at?: string
@@ -38,6 +41,19 @@ const DOC_LABELS: Record<string, string> = {
 
 type FilterTab = 'todos' | 'en_revision' | 'aprobado' | 'rechazado'
 
+type DocumentCounts = Record<FilterTab, number>
+
+type DocumentsPayload = {
+  documents?: Document[]
+  counts?: DocumentCounts
+  total?: number
+  page?: number
+  pageSize?: number
+  error?: string
+}
+
+const PAGE_SIZE = 25
+
 async function postAdminOperation(path: string, payload: unknown) {
   const response = await fetch(path, {
     method: 'POST',
@@ -57,49 +73,89 @@ export default function DocumentosAdminPage() {
   const [docs, setDocs]             = useState<Document[]>([])
   const [loading, setLoading]       = useState(true)
   const [tab, setTab]               = useState<FilterTab>('en_revision')
+  const [counts, setCounts]         = useState<DocumentCounts>({ todos: 0, en_revision: 0, aprobado: 0, rechazado: 0 })
+  const [total, setTotal]           = useState(0)
+  const [page, setPage]             = useState(1)
   const [selected, setSelected]     = useState<Document | null>(null)
   const [rejectNotes, setRejectNotes] = useState('')
   const [processing, setProcessing] = useState(false)
   const [search, setSearch]         = useState('')
+  const [selectedUrl, setSelectedUrl] = useState<string | null>(null)
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const { showToast } = useAppStore()
 
-  // Carga inicial
+  const loadDocuments = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true)
+
+    const params = new URLSearchParams({
+      status: tab,
+      page: String(page),
+      pageSize: String(PAGE_SIZE),
+    })
+    if (search.trim()) params.set('search', search.trim())
+
+    try {
+      const response = await fetch(`/api/admin/documents?${params.toString()}`, { cache: 'no-store' })
+      const data = await response.json().catch(() => ({})) as DocumentsPayload
+
+      if (!response.ok) {
+        throw new Error(data.error ?? 'No se pudieron cargar documentos')
+      }
+
+      setDocs(data.documents ?? [])
+      setCounts(data.counts ?? { todos: 0, en_revision: 0, aprobado: 0, rechazado: 0 })
+      setTotal(data.total ?? 0)
+    } catch (error) {
+      showToast(`No se pudieron cargar documentos: ${error instanceof Error ? error.message : 'operación fallida'}`)
+    } finally {
+      if (showLoading) setLoading(false)
+    }
+  }, [page, search, showToast, tab])
+
+  const scheduleDocumentsReload = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current)
+    refreshTimer.current = setTimeout(() => {
+      void loadDocuments(false)
+    }, 900)
+  }, [loadDocuments])
+
+  useEffect(() => {
+    const timeout = setTimeout(() => void loadDocuments(), 250)
+
+    return () => clearTimeout(timeout)
+  }, [loadDocuments])
+
   useEffect(() => {
     const supabase = createClient()
 
-    supabase
-      .from('documents')
-      .select('*')
-      .order('uploaded_at', { ascending: false })
-      .then(({ data, error }) => {
-        if (error) showToast(`No se pudieron cargar documentos: ${error.message}`)
-        setDocs((data as Document[]) ?? [])
-        setLoading(false)
-      })
-
-    // Realtime
     const channel = supabase
       .channel('admin-documents')
       .on('postgres_changes', {
         event: '*', schema: 'public', table: 'documents',
-      }, payload => {
-        if (payload.eventType === 'INSERT') {
-          setDocs(prev => [payload.new as Document, ...prev])
-        } else if (payload.eventType === 'UPDATE') {
-          setDocs(prev => prev.map(d =>
-            d.id === (payload.new as Document).id ? payload.new as Document : d
-          ))
-          setSelected(prev =>
-            prev?.id === (payload.new as Document).id ? payload.new as Document : prev
-          )
-        } else if (payload.eventType === 'DELETE') {
-          setDocs(prev => prev.filter(d => d.id !== (payload.old as Document).id))
-        }
-      })
+      }, scheduleDocumentsReload)
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
-  }, [showToast])
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current)
+      supabase.removeChannel(channel)
+    }
+  }, [scheduleDocumentsReload])
+
+  useEffect(() => {
+    let cancelled = false
+    const storagePath = selected?.storage_path ?? getStoragePath(selected?.url, 'documents')
+
+    queueMicrotask(() => {
+      if (!cancelled) setSelectedUrl(null)
+    })
+    if (!storagePath) return () => { cancelled = true }
+
+    getSignedStorageUrls('documents', [storagePath]).then(urls => {
+      if (!cancelled) setSelectedUrl(urls[storagePath] ?? null)
+    })
+
+    return () => { cancelled = true }
+  }, [selected])
 
   // Aprobar
   async function handleApprove(doc: Document) {
@@ -116,6 +172,7 @@ export default function DocumentosAdminPage() {
       showToast('Documento aprobado')
       setSelected(null)
       setRejectNotes('')
+      void loadDocuments(false)
     } catch (error) {
       showToast(`No se pudo aprobar el documento: ${error instanceof Error ? error.message : 'operación fallida'}`)
     } finally {
@@ -141,6 +198,7 @@ export default function DocumentosAdminPage() {
       showToast('Documento rechazado')
       setSelected(null)
       setRejectNotes('')
+      void loadDocuments(false)
     } catch (error) {
       showToast(`No se pudo rechazar el documento: ${error instanceof Error ? error.message : 'operación fallida'}`)
     } finally {
@@ -161,6 +219,7 @@ export default function DocumentosAdminPage() {
       ))
       setSelected(prev => prev ? { ...prev, status: 'en_revision', notes: undefined } : prev)
       showToast('Documento en revisión')
+      void loadDocuments(false)
     } catch (error) {
       showToast(`No se pudo volver a poner en revisión: ${error instanceof Error ? error.message : 'operación fallida'}`)
     } finally {
@@ -168,18 +227,19 @@ export default function DocumentosAdminPage() {
     }
   }
 
-  // Filtros
-  const filtered = docs.filter(d => {
-    const matchTab    = tab === 'todos' || d.status === tab
-    const matchSearch = !search || d.owner_name.toLowerCase().includes(search.toLowerCase())
-    return matchTab && matchSearch
-  })
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
-  const counts = {
-    todos:       docs.length,
-    en_revision: docs.filter(d => d.status === 'en_revision').length,
-    aprobado:    docs.filter(d => d.status === 'aprobado').length,
-    rechazado:   docs.filter(d => d.status === 'rechazado').length,
+  function handleTabChange(nextTab: FilterTab) {
+    setTab(nextTab)
+    setPage(1)
+    setSelected(null)
+    setRejectNotes('')
+  }
+
+  function handleSearchChange(value: string) {
+    setSearch(value)
+    setPage(1)
+    setSelected(null)
   }
 
   return (
@@ -231,7 +291,7 @@ export default function DocumentosAdminPage() {
         }}>
           {(['en_revision', 'todos', 'aprobado', 'rechazado'] as FilterTab[]).map(t => (
             <button key={t}
-              onClick={() => setTab(t)}
+              onClick={() => handleTabChange(t)}
               style={{
                 padding: '6px 14px', borderRadius: 6, border: 'none',
                 background: tab === t ? 'var(--surface)' : 'none',
@@ -255,7 +315,7 @@ export default function DocumentosAdminPage() {
         <input
           placeholder="Buscar por nombre…"
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => handleSearchChange(e.target.value)}
           style={{
             flex: 1, minWidth: 200, padding: '8px 12px',
             background: 'var(--surface)', border: '1px solid var(--border)',
@@ -274,7 +334,7 @@ export default function DocumentosAdminPage() {
             <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0' }}>
               Cargando documentos…
             </p>
-          ) : filtered.length === 0 ? (
+          ) : docs.length === 0 ? (
             <div style={{
               background: 'var(--surface)', border: '1px solid var(--border)',
               borderRadius: 'var(--radius)', padding: '48px 24px',
@@ -287,7 +347,8 @@ export default function DocumentosAdminPage() {
               </p>
             </div>
           ) : (
-            filtered.map(doc => {
+            <>
+            {docs.map(doc => {
               const cfg = STATUS_CONFIG[doc.status]
               const isSelected = selected?.id === doc.id
               return (
@@ -344,7 +405,28 @@ export default function DocumentosAdminPage() {
                   </span>
                 </button>
               )
-            })
+            })}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              gap: 12, marginTop: 4, padding: '10px 2px',
+            }}>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {total} resultado{total !== 1 ? 's' : ''} · página {page} de {totalPages}
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-secondary" style={{ fontSize: 12 }}
+                  disabled={page <= 1 || loading}
+                  onClick={() => setPage(prev => Math.max(1, prev - 1))}>
+                  Anterior
+                </button>
+                <button className="btn-secondary" style={{ fontSize: 12 }}
+                  disabled={page >= totalPages || loading}
+                  onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}>
+                  Siguiente
+                </button>
+              </div>
+            </div>
+            </>
           )}
         </div>
 
@@ -395,9 +477,9 @@ export default function DocumentosAdminPage() {
               <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.06em' }}>
                 Documento
               </p>
-              {selected.url ? (
-                selected.url.endsWith('.pdf') ? (
-                  <a href={selected.url} target="_blank" rel="noreferrer"
+              {selectedUrl ? (
+                selected.mime_type === 'application/pdf' || isPdfPath(selected.storage_path ?? selected.url) ? (
+                  <a href={selectedUrl} target="_blank" rel="noreferrer"
                     style={{
                       display: 'flex', alignItems: 'center', gap: 12,
                       background: 'var(--surface-2)', border: '1px solid var(--border)',
@@ -411,14 +493,15 @@ export default function DocumentosAdminPage() {
                     </div>
                   </a>
                 ) : (
-                  <a href={selected.url} target="_blank" rel="noreferrer">
-                    <img
-                      src={selected.url}
-                      alt={selected.type}
+                  <a href={selectedUrl} target="_blank" rel="noreferrer">
+                    <div
+                      role="img"
+                      aria-label={selected.type}
                       style={{
-                        width: '100%', borderRadius: 'var(--radius-sm)',
+                        width: '100%', height: 220, borderRadius: 'var(--radius-sm)',
                         border: '1px solid var(--border)',
-                        maxHeight: 220, objectFit: 'cover', cursor: 'zoom-in',
+                        background: `var(--surface-2) url(${selectedUrl}) center / cover`,
+                        cursor: 'zoom-in',
                       }}
                     />
                   </a>

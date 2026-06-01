@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Chip } from '@/components/ui/Chip'
 import { useAppStore } from '@/lib/store'
+import { getSignedStorageUrls, getStoragePath } from '@/lib/storage'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 interface TripDetail {
@@ -29,7 +30,13 @@ interface TripDetail {
 
 interface RelatedUser   { id: string; name: string | null; email: string | null; phone: string | null }
 interface RelatedDriver { id: string; name: string | null; phone: string | null; status: string | null }
-interface RelatedDoc    { id: string; type: string; status: string; file_url: string | null }
+interface RelatedDoc    { id: string; type: string; status: string; signedUrl: string | null }
+interface RawEvidenceDoc {
+  id: string
+  type: string
+  status: string
+  evidence_photos: { url: string; storage_path: string | null }[] | null
+}
 interface RelatedInc    { id: string; type: string; status: string; description: string; created_at: string | null }
 interface RelatedPay    { id: string; type: string; amount: number; status: string; concept: string }
 interface DriverOption  { id: string; name: string | null }
@@ -97,8 +104,12 @@ export default function ViajeDetailPage() {
       const supabase = createClient()
 
       const [tripRes, docsRes, incRes, payRes, driversRes] = await Promise.all([
-        supabase.from('trips').select('*').eq('id', id).single(),
-        supabase.from('documents').select('id, type, status, file_url').eq('trip_id', id),
+        supabase
+          .from('trips')
+          .select('id, status, service_type, origin_address, destination_address, distance_km, client_price_mxn, driver_pay_mxn, scheduled_at, created_at, updated_at, internal_notes, vehicle_brand, vehicle_model, vehicle_year, vehicle_plates, driver_id, user_id')
+          .eq('id', id)
+          .single(),
+        supabase.from('evidence').select('id, type, status, evidence_photos(url, storage_path)').eq('trip_id', id),
         supabase.from('incidents').select('id, type, status, description, created_at').eq('trip_id', id).order('created_at', { ascending: false }),
         supabase.from('payments').select('id, type, amount, status, concept').eq('trip_id', id),
         supabase.from('drivers').select('id, name').in('status', ['disponible', 'activo']).order('name'),
@@ -113,7 +124,26 @@ export default function ViajeDetailPage() {
       const t = tripRes.data as TripDetail
       setTrip(t)
       setNotes(t.internal_notes ?? '')
-      setDocs((docsRes.data ?? []) as RelatedDoc[])
+      const rawDocs = (docsRes.data ?? []) as RawEvidenceDoc[]
+      const docPaths = rawDocs.flatMap(doc =>
+        (doc.evidence_photos ?? []).flatMap(photo => {
+          const storagePath = photo.storage_path ?? getStoragePath(photo.url, 'evidence')
+          return storagePath ? [storagePath] : []
+        })
+      )
+      const signedUrls = await getSignedStorageUrls('evidence', docPaths)
+      setDocs(rawDocs.map(doc => {
+        const firstPath = (doc.evidence_photos ?? [])
+          .map(photo => photo.storage_path ?? getStoragePath(photo.url, 'evidence'))
+          .find(Boolean)
+
+        return {
+          id: doc.id,
+          type: doc.type,
+          status: doc.status,
+          signedUrl: firstPath ? signedUrls[firstPath] ?? null : null,
+        }
+      }))
       setIncidents((incRes.data ?? []) as RelatedInc[])
       setPayments((payRes.data ?? []) as RelatedPay[])
       setDriverOpts((driversRes.data ?? []) as DriverOption[])
@@ -385,8 +415,8 @@ export default function ViajeDetailPage() {
                   <td className="td-bold">{doc.type}</td>
                   <td><Chip status={doc.status}>{doc.status}</Chip></td>
                   <td>
-                    {doc.file_url && (
-                      <a href={doc.file_url} target="_blank" rel="noreferrer"
+                    {doc.signedUrl && (
+                      <a href={doc.signedUrl} target="_blank" rel="noreferrer"
                         className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }}>
                         Ver archivo
                       </a>

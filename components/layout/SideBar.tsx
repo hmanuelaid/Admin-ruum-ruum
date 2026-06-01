@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { AdminNavIcon, VisibleAdminNavGroup } from '@/lib/auth/permissions'
 
-const ICONS: Record<AdminNavIcon, ReactNode> = {
+export const ADMIN_NAV_ICONS: Record<AdminNavIcon, ReactNode> = {
   dashboard: <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>,
   trips: <svg viewBox="0 0 24 24"><path d="M5 17h14"/><path d="M7 17v2"/><path d="M17 17v2"/><path d="m6 13 1.5-5h9L18 13"/><path d="M4 13h16v4H4Z"/></svg>,
   users: <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.85"/></svg>,
@@ -50,7 +50,7 @@ export default function Sidebar({ navGroups }: Props) {
                 <Link key={href} href={href}
                   aria-current={active ? 'page' : undefined}
                   className={`nav-item${active ? ' is-active' : ''}`}>
-                  {ICONS[icon]}
+                  {ADMIN_NAV_ICONS[icon]}
                   <span>{label}</span>
                   {badge ? <span className="nav-badge">{badge}</span> : null}
                 </Link>

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Chip } from '@/components/ui/Chip'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
+import { getStoragePath } from '@/lib/storage'
 import type { DriverStatus } from '@/lib/types'
 
 export const dynamic = 'force-dynamic'
@@ -30,8 +31,13 @@ type DocumentRow = {
   type: string | null
   status: string | null
   url: string | null
+  storage_path: string | null
   uploaded_at: string | null
   expires_at: string | null
+}
+
+type SignedDocumentRow = DocumentRow & {
+  signedUrl: string | null
 }
 
 type TripRow = {
@@ -104,7 +110,7 @@ export default async function ConductorDetailPage({ params }: Props) {
       .maybeSingle(),
     supabase
       .from('documents')
-      .select('id, type, status, url, uploaded_at, expires_at')
+      .select('id, type, status, url, storage_path, uploaded_at, expires_at')
       .eq('owner_id', id)
       .eq('owner_type', 'driver')
       .order('uploaded_at', { ascending: false }),
@@ -121,7 +127,14 @@ export default async function ConductorDetailPage({ params }: Props) {
   }
 
   const driver = driverRes.data as DriverRow
-  const documents = (docsRes.data ?? []) as DocumentRow[]
+  const documentRows = (docsRes.data ?? []) as DocumentRow[]
+  const documents: SignedDocumentRow[] = await Promise.all(documentRows.map(async doc => {
+    const storagePath = doc.storage_path ?? getStoragePath(doc.url, 'documents')
+    if (!storagePath) return { ...doc, signedUrl: null }
+
+    const { data } = await supabase.storage.from('documents').createSignedUrl(storagePath, 300)
+    return { ...doc, signedUrl: data?.signedUrl ?? null }
+  }))
   const trips = (tripsRes.data ?? []) as TripRow[]
   const documentWarning = docsRes.error?.message ?? null
   const tripWarning = tripsRes.error?.message ?? null
@@ -213,8 +226,8 @@ export default async function ConductorDetailPage({ params }: Props) {
                     <td className="td-muted">{date(doc.uploaded_at)}</td>
                     <td className="td-muted">{date(doc.expires_at)}</td>
                     <td>
-                      {doc.url ? (
-                        <a className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }} href={doc.url} target="_blank" rel="noreferrer">
+                      {doc.signedUrl ? (
+                        <a className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }} href={doc.signedUrl} target="_blank" rel="noreferrer">
                           Ver archivo
                         </a>
                       ) : (

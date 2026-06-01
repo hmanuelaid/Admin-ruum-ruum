@@ -3,12 +3,15 @@ import { useEffect, useState } from 'react'
 import { Chip } from '@/components/ui/Chip'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
+import { getSignedStorageUrls, getStoragePath } from '@/lib/storage'
 
 type EvidenceTab = 'inicial' | 'final'
 type EvidenceStatus = 'pendiente_carga' | 'en_revision' | 'aprobado' | 'rechazado' | 'vencido' | 'requiere_actualizacion'
 
 interface EvidencePhoto {
   url: string
+  storage_path: string | null
+  signedUrl?: string | null
 }
 
 interface TripEvidence {
@@ -79,14 +82,38 @@ export default function EvidenciaPage() {
             fuel_level,
             notes,
             created_at,
-            evidence_photos (url)
+            evidence_photos (url, storage_path)
           )
         `)
         .order('created_at', { ascending: false })
 
       if (cancelled) return
       const rows = (data ?? []) as EvidenceTrip[]
-      setTrips(rows)
+      const paths = rows.flatMap(trip =>
+        (trip.evidence ?? []).flatMap(ev =>
+          (ev.evidence_photos ?? []).flatMap(photo => {
+            const storagePath = photo.storage_path ?? getStoragePath(photo.url, 'evidence')
+            return storagePath ? [storagePath] : []
+          })
+        )
+      )
+      const signedUrls = await getSignedStorageUrls('evidence', paths)
+      const signedRows = rows.map(trip => ({
+        ...trip,
+        evidence: trip.evidence?.map(ev => ({
+          ...ev,
+          evidence_photos: ev.evidence_photos?.map(photo => {
+            const storagePath = photo.storage_path ?? getStoragePath(photo.url, 'evidence')
+            return {
+              ...photo,
+              storage_path: storagePath,
+              signedUrl: storagePath ? signedUrls[storagePath] ?? null : null,
+            }
+          }) ?? null,
+        })) ?? null,
+      }))
+
+      setTrips(signedRows)
       setSelected(current => current ?? rows[0]?.id ?? null)
       setLoading(false)
     }
@@ -221,15 +248,18 @@ export default function EvidenciaPage() {
                   {photos.length > 0 ? (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 20 }}>
                       {photos.map(photo => (
-                        <a key={photo.url}
-                          href={photo.url}
+                        <a key={photo.storage_path ?? photo.url}
+                          href={photo.signedUrl ?? '#'}
                           target="_blank"
                           rel="noreferrer"
                           style={{
                             aspectRatio: '1', borderRadius: 'var(--radius-sm)',
-                            background: `var(--surface-2) url(${photo.url}) center / cover`,
+                            background: photo.signedUrl
+                              ? `var(--surface-2) url(${photo.signedUrl}) center / cover`
+                              : 'var(--surface-2)',
                             border: '1px solid var(--border)',
                             display: 'block',
+                            pointerEvents: photo.signedUrl ? 'auto' : 'none',
                           }}
                           aria-label="Ver foto completa"
                         />

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { Chip } from '@/components/ui/Chip'
@@ -24,6 +24,24 @@ interface PaymentRow {
 
 type PayStatus = 'pendiente' | 'en_revision' | 'pagado' | 'rechazado' | 'ajustado'
 
+type PaymentMetrics = {
+  pendientes: number
+  pagados: number
+  totalPagado: number
+  rechazados: number
+}
+
+type PaymentsPayload = {
+  payments?: PaymentRow[]
+  metrics?: PaymentMetrics
+  total?: number
+  page?: number
+  pageSize?: number
+  error?: string
+}
+
+const PAGE_SIZE = 25
+
 const STATUS_LABELS: Record<string, string> = {
   pendiente:   'Pendiente',
   en_revision: 'En revisión',
@@ -35,10 +53,7 @@ const STATUS_LABELS: Record<string, string> = {
 const TYPE_LABELS: Record<string, string> = {
   cobro_usuario:      'Cobro usuario',
   pago_conductor:     'Pago conductor',
-  reembolso:          'Reembolso',
-  ajuste:             'Ajuste',
-  penalizacion:       'Penalización',
-  bono:               'Bono',
+  gasto:              'Gasto',
 }
 
 function money(v: number | null) {
@@ -70,81 +85,69 @@ export default function PagosPage() {
   const [statusFilter,  setStatusFilter]  = useState('')
   const [typeFilter,    setTypeFilter]    = useState('')
   const [search,        setSearch]        = useState('')
+  const [metrics,       setMetrics]       = useState<PaymentMetrics>({ pendientes: 0, pagados: 0, totalPagado: 0, rechazados: 0 })
+  const [total,         setTotal]         = useState(0)
+  const [page,          setPage]          = useState(1)
   const [updating,      setUpdating]      = useState<string | null>(null)
   const [selectedIds,   setSelectedIds]   = useState<Set<string>>(new Set())
   const [bulkSaving,    setBulkSaving]    = useState(false)
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // ── Carga ──────────────────────────────────────────────────────────────────
+  const loadPayments = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true)
+
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(PAGE_SIZE),
+    })
+    if (statusFilter) params.set('status', statusFilter)
+    if (typeFilter) params.set('type', typeFilter)
+    if (search.trim()) params.set('search', search.trim())
+
+    try {
+      const response = await fetch(`/api/admin/payments?${params.toString()}`, { cache: 'no-store' })
+      const data = await response.json().catch(() => ({})) as PaymentsPayload
+
+      if (!response.ok) {
+        throw new Error(data.error ?? 'No se pudieron cargar pagos')
+      }
+
+      setPayments(data.payments ?? [])
+      setMetrics(data.metrics ?? { pendientes: 0, pagados: 0, totalPagado: 0, rechazados: 0 })
+      setTotal(data.total ?? 0)
+    } catch (error) {
+      showToast(`Error cargando pagos: ${error instanceof Error ? error.message : 'operación fallida'}`)
+    } finally {
+      if (showLoading) setLoading(false)
+    }
+  }, [page, search, showToast, statusFilter, typeFilter])
+
+  const schedulePaymentsReload = useCallback(() => {
+    if (refreshTimer.current) clearTimeout(refreshTimer.current)
+    refreshTimer.current = setTimeout(() => {
+      void loadPayments(false)
+    }, 900)
+  }, [loadPayments])
+
   useEffect(() => {
-    let cancelled = false
+    const timeout = setTimeout(() => void loadPayments(), 250)
+
+    return () => clearTimeout(timeout)
+  }, [loadPayments])
+
+  useEffect(() => {
     const supabase = createClient()
 
-    async function load() {
-      setLoading(true)
-
-      type RawPay = {
-        id: string; type: string | null; status: string | null; amount: number | null;
-        concept: string | null; trip_id: string | null; driver_id: string | null;
-        user_id: string | null; created_at: string | null; paid_at: string | null; notes: string | null;
-        drivers: { name: string | null } | { name: string | null }[] | null;
-        app_users: { name: string | null } | { name: string | null }[] | null;
-      }
-
-      const { data, error } = await supabase
-        .from('payments')
-        .select('*, drivers(name), app_users(name)')
-        .order('created_at', { ascending: false })
-
-      if (cancelled) return
-
-      if (error) {
-        showToast(`Error cargando pagos: ${error.message}`)
-        setLoading(false)
-        return
-      }
-
-      setPayments(((data ?? []) as RawPay[]).map(p => ({
-        id: p.id, type: p.type, status: p.status, amount: p.amount,
-        concept: p.concept, trip_id: p.trip_id, driver_id: p.driver_id,
-        user_id: p.user_id, created_at: p.created_at, paid_at: p.paid_at, notes: p.notes,
-        driver_name: (Array.isArray(p.drivers) ? p.drivers[0] : p.drivers)?.name ?? null,
-        user_name:   (Array.isArray(p.app_users) ? p.app_users[0] : p.app_users)?.name ?? null,
-      })))
-      setLoading(false)
-    }
-
-    void load()
-
-    // Realtime
     const channel = supabase.channel('pagos-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, () => void load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payments' }, schedulePaymentsReload)
       .subscribe()
 
-    return () => { cancelled = true; supabase.removeChannel(channel) }
-  }, [showToast])
-
-  // ── Filtros ────────────────────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return payments.filter(p => {
-      const matchSearch = !q ||
-        (p.concept ?? '').toLowerCase().includes(q) ||
-        (p.driver_name ?? '').toLowerCase().includes(q) ||
-        (p.user_name ?? '').toLowerCase().includes(q) ||
-        p.id.toLowerCase().includes(q)
-      const matchStatus = !statusFilter || p.status === statusFilter
-      const matchType   = !typeFilter   || p.type   === typeFilter
-      return matchSearch && matchStatus && matchType
-    })
-  }, [payments, search, statusFilter, typeFilter])
-
-  // ── Métricas rápidas ───────────────────────────────────────────────────────
-  const metrics = useMemo(() => ({
-    pendientes:  payments.filter(p => p.status === 'pendiente' || p.status === 'en_revision').length,
-    pagados:     payments.filter(p => p.status === 'pagado').length,
-    totalPagado: payments.filter(p => p.status === 'pagado').reduce((s, p) => s + (p.amount ?? 0), 0),
-    rechazados:  payments.filter(p => p.status === 'rechazado').length,
-  }), [payments])
+    return () => {
+      if (refreshTimer.current) clearTimeout(refreshTimer.current)
+      supabase.removeChannel(channel)
+    }
+  }, [schedulePaymentsReload])
 
   // ── Cambiar estatus individual ─────────────────────────────────────────────
   async function handleStatusChange(payId: string, newStatus: string) {
@@ -159,6 +162,7 @@ export default function PagosPage() {
         p.id === payId ? { ...p, status: newStatus, ...(paidAt ? { paid_at: paidAt } : {}) } : p
       ))
       showToast(`✅ Pago marcado como ${STATUS_LABELS[newStatus] ?? newStatus}`)
+      void loadPayments(false)
     } catch (error) {
       showToast(`Error: ${error instanceof Error ? error.message : 'operación fallida'}`)
     } finally {
@@ -183,6 +187,7 @@ export default function PagosPage() {
       ))
       setSelectedIds(new Set())
       showToast(`✅ ${ids.length} pagos marcados como ${STATUS_LABELS[newStatus]}`)
+      void loadPayments(false)
     } catch (error) {
       showToast(`Error: ${error instanceof Error ? error.message : 'operación fallida'}`)
     } finally {
@@ -203,14 +208,33 @@ export default function PagosPage() {
   }
 
   function toggleSelectAll() {
-    if (selectedIds.size === filtered.length) {
+    if (selectedIds.size === payments.length) {
       setSelectedIds(new Set())
     } else {
-      setSelectedIds(new Set(filtered.map(p => p.id)))
+      setSelectedIds(new Set(payments.map(p => p.id)))
     }
   }
 
-  const pendingSelected = filtered.filter(p => selectedIds.has(p.id) && (p.status === 'pendiente' || p.status === 'en_revision'))
+  function handleSearchChange(value: string) {
+    setSearch(value)
+    setPage(1)
+    setSelectedIds(new Set())
+  }
+
+  function handleStatusFilterChange(value: string) {
+    setStatusFilter(value)
+    setPage(1)
+    setSelectedIds(new Set())
+  }
+
+  function handleTypeFilterChange(value: string) {
+    setTypeFilter(value)
+    setPage(1)
+    setSelectedIds(new Set())
+  }
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+  const pendingSelected = payments.filter(p => selectedIds.has(p.id) && (p.status === 'pendiente' || p.status === 'en_revision'))
 
   return (
     <>
@@ -218,7 +242,7 @@ export default function PagosPage() {
         <div>
           <h1 className="page-title">Pagos</h1>
           <p className="page-sub">
-            {loading ? 'Cargando…' : `${payments.length} registros · ${metrics.pendientes} pendientes`}
+            {loading ? 'Cargando…' : `${total} registros · ${metrics.pendientes} pendientes`}
           </p>
         </div>
           <button className="btn-primary" onClick={() => router.push('/pagos/nuevo')}>
@@ -249,13 +273,13 @@ export default function PagosPage() {
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
           </svg>
           <input placeholder="Buscar por concepto, conductor o usuario…"
-            value={search} onChange={e => setSearch(e.target.value)} />
+            value={search} onChange={e => handleSearchChange(e.target.value)} />
         </div>
-        <select className="filter-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+        <select className="filter-select" value={statusFilter} onChange={e => handleStatusFilterChange(e.target.value)}>
           <option value="">Todos los estatus</option>
           {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <select className="filter-select" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+        <select className="filter-select" value={typeFilter} onChange={e => handleTypeFilterChange(e.target.value)}>
           <option value="">Todos los tipos</option>
           {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
@@ -292,7 +316,7 @@ export default function PagosPage() {
             <tr>
               <th style={{ width: 36 }}>
                 <input type="checkbox"
-                  checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                  checked={payments.length > 0 && selectedIds.size === payments.length}
                   onChange={toggleSelectAll} />
               </th>
               <th>Concepto</th>
@@ -309,7 +333,7 @@ export default function PagosPage() {
               <tr><td colSpan={8}>
                 <div className="empty-state"><p className="muted">Cargando pagos…</p></div>
               </td></tr>
-            ) : filtered.length === 0 ? (
+            ) : payments.length === 0 ? (
               <tr><td colSpan={8}>
                 <div className="empty-state">
                   <span className="icon">💳</span>
@@ -317,7 +341,7 @@ export default function PagosPage() {
                   <p className="muted">No hay registros que coincidan con los filtros</p>
                 </div>
               </td></tr>
-            ) : filtered.map(p => (
+            ) : payments.map(p => (
               <tr key={p.id} style={{ background: selectedIds.has(p.id) ? 'var(--primary-dim)' : undefined }}>
                 <td>
                   <input type="checkbox"
@@ -377,6 +401,26 @@ export default function PagosPage() {
             ))}
           </tbody>
         </table>
+      </div>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: 12, padding: '10px 2px',
+      }}>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+          {total} resultado{total !== 1 ? 's' : ''} · página {page} de {totalPages}
+        </p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-secondary" style={{ fontSize: 12 }}
+            disabled={page <= 1 || loading}
+            onClick={() => { setSelectedIds(new Set()); setPage(prev => Math.max(1, prev - 1)) }}>
+            Anterior
+          </button>
+          <button className="btn-secondary" style={{ fontSize: 12 }}
+            disabled={page >= totalPages || loading}
+            onClick={() => { setSelectedIds(new Set()); setPage(prev => Math.min(totalPages, prev + 1)) }}>
+            Siguiente
+          </button>
+        </div>
       </div>
     </>
   )

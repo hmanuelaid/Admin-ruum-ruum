@@ -47,7 +47,7 @@ export default function ConductoresPage() {
 
       const { data, error: loadError } = await supabase
         .from('drivers')
-        .select('*')
+        .select('id, name, phone, email, state, status, certified, rating, trips_completed, earnings, photo_url, created_at')
         .order('created_at', { ascending: false })
 
       if (cancelled) return

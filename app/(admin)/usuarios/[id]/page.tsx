@@ -63,7 +63,11 @@ export default function UsuarioDetailPage() {
       const supabase = createClient()
 
       const [userRes, tripsRes] = await Promise.all([
-        supabase.from('app_users').select('*').eq('id', id).single(),
+        supabase
+          .from('app_users')
+          .select('id, name, email, phone, type, status, trips_count, company, created_at, notes')
+          .eq('id', id)
+          .single(),
         supabase
           .from('trips')
           .select('id, status, created_at, client_price_mxn, origin_address, destination_address, driver_name')

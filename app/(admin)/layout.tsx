@@ -21,7 +21,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="admin-shell">
       <AdminSessionHydrator admin={admin} />
       <Sidebar navGroups={navGroups} />
-      <Topbar admin={admin} />
+      <Topbar admin={admin} navGroups={navGroups} />
       <main className="page-content">
         {children}
       </main>

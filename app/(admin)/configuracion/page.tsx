@@ -1,84 +1,70 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
-import { createClient } from '@/lib/supabase'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAppStore } from '@/lib/store'
+import {
+  getConfigGroups,
+  validateSystemConfigValue,
+  type SystemConfigItem,
+} from '@/lib/config/system-config'
 
-// ── Tipos ──────────────────────────────────────────────────────────────────────
-interface SystemConfig {
-  id: string
-  key: string
-  value: string
-  label: string
-  description: string | null
-  type: 'number' | 'text' | 'boolean' | 'percent'
-  group: string
+type ConfigApiResponse = {
+  configs?: SystemConfigItem[]
+  sourceAvailable?: boolean
+  error?: {
+    code?: string
+    message?: string
+  } | null
+  errors?: Record<string, string>
+  saved?: number
 }
 
-interface ConfigRow {
-  id: string
-  key: string
-  value: string
+async function readConfigResponse(response: Response): Promise<ConfigApiResponse> {
+  const payload = await response.json().catch(() => ({}))
+  return payload as ConfigApiResponse
 }
 
-// ── Configuración por defecto (si no existe en BD) ────────────────────────────
-const DEFAULT_CONFIG: Omit<SystemConfig, 'id'>[] = [
-  // Tarifas
-  { key: 'tarifa_base_mxn',         value: '150',  label: 'Tarifa base',              description: 'Cobro mínimo por servicio en MXN',              type: 'number',  group: 'Tarifas' },
-  { key: 'tarifa_km_mxn',           value: '18',   label: 'Costo por kilómetro',      description: 'MXN adicionales por km recorrido',               type: 'number',  group: 'Tarifas' },
-  { key: 'comision_conductor_pct',  value: '75',   label: 'Comisión conductor (%)',   description: 'Porcentaje de la tarifa que recibe el conductor', type: 'percent', group: 'Tarifas' },
-  { key: 'iva_pct',                 value: '16',   label: 'IVA (%)',                  description: 'Porcentaje de IVA aplicado al cobro al cliente',  type: 'percent', group: 'Tarifas' },
-  // Operación
-  { key: 'tiempo_asignacion_min',   value: '15',   label: 'Tiempo límite asignación', description: 'Minutos antes de alertar un viaje sin conductor', type: 'number',  group: 'Operación' },
-  { key: 'radio_busqueda_km',       value: '25',   label: 'Radio búsqueda conductor', description: 'Kilómetros máximos para buscar conductor cercano', type: 'number',  group: 'Operación' },
-  { key: 'max_incidencias_conductor', value: '3',  label: 'Máx. incidencias conductor', description: 'Incidencias antes de suspender automáticamente', type: 'number', group: 'Operación' },
-  { key: 'requiere_evidencia_inicial', value: 'true', label: 'Evidencia inicial requerida', description: 'El conductor debe subir fotos antes del traslado', type: 'boolean', group: 'Operación' },
-  { key: 'requiere_evidencia_final',   value: 'true', label: 'Evidencia final requerida',   description: 'El conductor debe subir fotos al entregar',       type: 'boolean', group: 'Operación' },
-  // Notificaciones
-  { key: 'notif_viaje_sin_conductor', value: 'true', label: 'Alerta viaje sin conductor', description: 'Notificar cuando un viaje lleva más del tiempo límite sin conductor', type: 'boolean', group: 'Notificaciones' },
-  { key: 'notif_incidencia_nueva',    value: 'true', label: 'Alerta incidencia nueva',    description: 'Notificar cuando se registra una nueva incidencia',   type: 'boolean', group: 'Notificaciones' },
-  { key: 'notif_doc_vencido',         value: 'true', label: 'Alerta documento vencido',   description: 'Notificar cuando un documento de conductor vence',    type: 'boolean', group: 'Notificaciones' },
-]
-
-// ── Componente ─────────────────────────────────────────────────────────────────
 export default function ConfiguracionPage() {
   const { showToast } = useAppStore()
 
-  const [configs,  setConfigs]  = useState<SystemConfig[]>([])
-  const [edits,    setEdits]    = useState<Record<string, string>>({})
-  const [dirty,    setDirty]    = useState<Set<string>>(new Set())
-  const [loading,  setLoading]  = useState(true)
-  const [saving,   setSaving]   = useState(false)
+  const [configs, setConfigs] = useState<SystemConfigItem[]>([])
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [dirty, setDirty] = useState<Set<string>>(new Set())
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+  const [sourceAvailable, setSourceAvailable] = useState(false)
+  const [configError, setConfigError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [activeGroup, setActiveGroup] = useState('Tarifas')
 
   const loadConfig = useCallback(async () => {
     setLoading(true)
-    const supabase = createClient()
+    setConfigError(null)
 
-    const { data, error } = await supabase
-      .from('system_config')
-      .select('id, key, value')
+    try {
+      const response = await fetch('/api/admin/system-config', { cache: 'no-store' })
+      const payload = await readConfigResponse(response)
 
-    if (error && error.code !== 'PGRST116') {
-      // Tabla no existe aún — usar defaults locales
-      const local = DEFAULT_CONFIG.map((c, i) => ({ ...c, id: `local-${i}` }))
-      setConfigs(local)
-      setEdits(Object.fromEntries(local.map(c => [c.key, c.value])))
+      if (!payload.configs) {
+        throw new Error(payload.error?.message ?? 'No se pudo cargar configuracion')
+      }
+
+      setConfigs(payload.configs)
+      setEdits(Object.fromEntries(payload.configs.map(config => [config.key, config.value])))
+      setDirty(new Set())
+      setValidationErrors({})
+      setSourceAvailable(Boolean(payload.sourceAvailable))
+
+      if (!response.ok || !payload.sourceAvailable) {
+        setConfigError(payload.error?.message ?? 'La fuente real de configuracion no esta disponible')
+      }
+    } catch (error) {
+      setConfigs([])
+      setEdits({})
+      setSourceAvailable(false)
+      setConfigError(error instanceof Error ? error.message : 'No se pudo cargar configuracion')
+    } finally {
       setLoading(false)
-      return
     }
-
-    const dbMap: Record<string, string> = {}
-    ;(data ?? []).forEach((r: ConfigRow) => { dbMap[r.key] = r.value })
-
-    const merged: SystemConfig[] = DEFAULT_CONFIG.map((c, i) => ({
-      ...c,
-      id: (data ?? []).find((r: ConfigRow) => r.key === c.key)?.id ?? `local-${i}`,
-      value: dbMap[c.key] ?? c.value,
-    }))
-
-    setConfigs(merged)
-    setEdits(Object.fromEntries(merged.map(c => [c.key, c.value])))
-    setLoading(false)
   }, [])
 
   useEffect(() => {
@@ -88,43 +74,77 @@ export default function ConfiguracionPage() {
   function handleChange(key: string, value: string) {
     setEdits(prev => ({ ...prev, [key]: value }))
     setDirty(prev => new Set(prev).add(key))
+    setValidationErrors(prev => {
+      if (!prev[key]) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
   }
 
   async function handleSave() {
-    setSaving(true)
-    const supabase = createClient()
-
-    const toUpsert = configs
-      .filter(c => dirty.has(c.key))
-      .map(c => ({ key: c.key, value: edits[c.key] ?? c.value }))
-
-    if (toUpsert.length === 0) {
-      showToast('Sin cambios pendientes')
-      setSaving(false)
+    if (!sourceAvailable) {
+      showToast('No se puede guardar: system_config no esta disponible')
       return
     }
 
-    const { error } = await supabase
-      .from('system_config')
-      .upsert(toUpsert, { onConflict: 'key' })
+    const toUpsert = configs
+      .filter(config => dirty.has(config.key))
+      .map(config => ({ key: config.key, value: edits[config.key] ?? config.value }))
 
-    if (error) {
-      showToast(`Error: ${error.message}`)
-    } else {
-      setDirty(new Set())
-      showToast(`✅ ${toUpsert.length} parámetro(s) guardados`)
-      void loadConfig()
+    if (toUpsert.length === 0) {
+      showToast('Sin cambios pendientes')
+      return
     }
-    setSaving(false)
+
+    const nextValidationErrors: Record<string, string> = {}
+    const normalizedItems = toUpsert.flatMap(item => {
+      const result = validateSystemConfigValue(item.key, item.value)
+      if (!result.ok) {
+        nextValidationErrors[item.key] = result.error
+        return []
+      }
+      return [{ key: item.key, value: result.value }]
+    })
+
+    if (Object.keys(nextValidationErrors).length > 0) {
+      setValidationErrors(nextValidationErrors)
+      showToast('Revisa los parametros fuera de rango')
+      return
+    }
+
+    setSaving(true)
+    try {
+      const response = await fetch('/api/admin/system-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: normalizedItems }),
+      })
+      const payload = await readConfigResponse(response)
+
+      if (!response.ok) {
+        if (payload.errors) setValidationErrors(payload.errors)
+        throw new Error(payload.error?.message ?? 'No se pudo guardar configuracion')
+      }
+
+      setDirty(new Set())
+      showToast(`${payload.saved ?? normalizedItems.length} parametro(s) guardados`)
+      void loadConfig()
+    } catch (error) {
+      showToast(`Error: ${error instanceof Error ? error.message : 'operacion fallida'}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   function handleReset() {
-    setEdits(Object.fromEntries(configs.map(c => [c.key, c.value])))
+    setEdits(Object.fromEntries(configs.map(config => [config.key, config.value])))
     setDirty(new Set())
+    setValidationErrors({})
   }
 
-  const groups = [...new Set(DEFAULT_CONFIG.map(c => c.group))]
-  const visibleConfigs = configs.filter(c => c.group === activeGroup)
+  const groups = useMemo(() => getConfigGroups(), [])
+  const visibleConfigs = configs.filter(config => config.group === activeGroup)
 
   return (
     <>
@@ -138,58 +158,68 @@ export default function ConfiguracionPage() {
             <button className="btn-secondary" onClick={handleReset} disabled={saving}>
               Descartar cambios
             </button>
-            <button className="btn-primary" onClick={handleSave} disabled={saving}>
-              {saving ? 'Guardando…' : `Guardar ${dirty.size} cambio(s)`}
+            <button className="btn-primary" onClick={handleSave} disabled={saving || !sourceAvailable}>
+              {saving ? 'Guardando...' : `Guardar ${dirty.size} cambio(s)`}
             </button>
           </div>
         )}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 20, alignItems: 'start' }}>
+      {configError && (
+        <div className="table-wrap" style={{ padding: '1rem 1.25rem', marginBottom: 16, borderColor: 'var(--danger)' }}>
+          <p style={{ fontWeight: 700, fontSize: 13, color: 'var(--danger)', marginBottom: 4 }}>
+            Configuración no disponible para edición
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{configError}</p>
+        </div>
+      )}
 
-        {/* Sidebar de grupos */}
+      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 20, alignItems: 'start' }}>
         <div className="table-wrap" style={{ padding: '8px 0' }}>
-          {groups.map(group => (
-            <button key={group} onClick={() => setActiveGroup(group)}
-              style={{
-                display: 'block', width: '100%', textAlign: 'left',
-                padding: '9px 16px', background: 'none', border: 'none',
-                cursor: 'pointer', fontSize: 13,
-                fontWeight: activeGroup === group ? 600 : 400,
-                color: activeGroup === group ? 'var(--primary)' : 'var(--text)',
-                borderLeft: activeGroup === group ? '3px solid var(--primary)' : '3px solid transparent',
-              }}>
-              {group}
-              {dirty.size > 0 && configs.filter(c => c.group === group && dirty.has(c.key)).length > 0 && (
-                <span className="nav-badge" style={{ marginLeft: 6 }}>
-                  {configs.filter(c => c.group === group && dirty.has(c.key)).length}
-                </span>
-              )}
-            </button>
-          ))}
+          {groups.map(group => {
+            const dirtyCount = configs.filter(config => config.group === group && dirty.has(config.key)).length
+            return (
+              <button key={group} onClick={() => setActiveGroup(group)}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  padding: '9px 16px', background: 'none', border: 'none',
+                  cursor: 'pointer', fontSize: 13,
+                  fontWeight: activeGroup === group ? 600 : 400,
+                  color: activeGroup === group ? 'var(--primary)' : 'var(--text)',
+                  borderLeft: activeGroup === group ? '3px solid var(--primary)' : '3px solid transparent',
+                }}>
+                {group}
+                {dirtyCount > 0 && <span className="nav-badge" style={{ marginLeft: 6 }}>{dirtyCount}</span>}
+              </button>
+            )
+          })}
         </div>
 
-        {/* Panel de configuración */}
         <div className="table-wrap" style={{ padding: '1.25rem' }}>
           <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 20 }}>{activeGroup}</p>
 
           {loading ? (
-            <div className="empty-state"><p className="muted">Cargando configuración…</p></div>
+            <div className="empty-state"><p className="muted">Cargando configuración...</p></div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
               {visibleConfigs.map(config => {
                 const isDirty = dirty.has(config.key)
                 const val = edits[config.key] ?? config.value
+                const validationError = validationErrors[config.key]
+                const disabled = saving || !sourceAvailable
 
                 return (
                   <div key={config.key} style={{ display: 'grid', gridTemplateColumns: '1fr 200px', gap: 16, alignItems: 'start', paddingBottom: 20, borderBottom: '0.5px solid var(--border)' }}>
                     <div>
                       <p style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>
                         {config.label}
-                        {isDirty && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--warning)', fontWeight: 700 }}>● MODIFICADO</span>}
+                        {isDirty && <span style={{ marginLeft: 6, fontSize: 10, color: 'var(--warning)', fontWeight: 700 }}>MODIFICADO</span>}
                       </p>
                       <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{config.description}</p>
                       <p style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, fontFamily: 'monospace' }}>{config.key}</p>
+                      {validationError && (
+                        <p style={{ fontSize: 11, color: 'var(--danger)', marginTop: 6 }}>{validationError}</p>
+                      )}
                     </div>
 
                     <div>
@@ -198,14 +228,16 @@ export default function ConfiguracionPage() {
                           {['true', 'false'].map(opt => (
                             <button key={opt}
                               onClick={() => handleChange(config.key, opt)}
+                              disabled={disabled}
                               style={{
                                 flex: 1, padding: '8px', fontSize: 12, borderRadius: 6,
                                 border: `1px solid ${val === opt ? 'var(--primary)' : 'var(--border)'}`,
                                 background: val === opt ? 'var(--primary-dim)' : 'var(--surface-2)',
                                 color: val === opt ? 'var(--primary)' : 'var(--text-muted)',
-                                cursor: 'pointer', fontWeight: val === opt ? 600 : 400,
+                                cursor: disabled ? 'not-allowed' : 'pointer', fontWeight: val === opt ? 600 : 400,
+                                opacity: disabled ? 0.65 : 1,
                               }}>
-                              {opt === 'true' ? '✓ Sí' : '✗ No'}
+                              {opt === 'true' ? 'Si' : 'No'}
                             </button>
                           ))}
                         </div>
@@ -214,21 +246,24 @@ export default function ConfiguracionPage() {
                           <input
                             type={config.type === 'number' || config.type === 'percent' ? 'number' : 'text'}
                             value={val}
-                            onChange={e => handleChange(config.key, e.target.value)}
-                            min={0}
+                            onChange={event => handleChange(config.key, event.target.value)}
+                            min={config.min}
+                            max={config.max}
+                            step={config.integer ? 1 : 0.01}
+                            disabled={disabled}
                             style={{
                               width: '100%', padding: '8px 12px',
-                              paddingRight: config.type === 'percent' ? '32px' : config.type === 'number' ? '40px' : '12px',
+                              paddingRight: config.type === 'percent' ? '32px' : config.key.includes('mxn') ? '40px' : '12px',
                               fontSize: 13, borderRadius: 6,
-                              border: `1px solid ${isDirty ? 'var(--primary)' : 'var(--border)'}`,
+                              border: `1px solid ${validationError ? 'var(--danger)' : isDirty ? 'var(--primary)' : 'var(--border)'}`,
                               background: 'var(--surface-2)', color: 'var(--text)',
-                              fontFamily: 'inherit',
+                              fontFamily: 'inherit', opacity: disabled ? 0.65 : 1,
                             }}
                           />
-                          {(config.type === 'percent') && (
+                          {config.type === 'percent' && (
                             <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--text-muted)' }}>%</span>
                           )}
-                          {(config.type === 'number' && config.key.includes('mxn')) && (
+                          {config.key.includes('mxn') && (
                             <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--text-muted)' }}>MXN</span>
                           )}
                         </div>
@@ -241,7 +276,6 @@ export default function ConfiguracionPage() {
           )}
         </div>
       </div>
-
     </>
   )
 }

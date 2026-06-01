@@ -50,10 +50,20 @@ export type VisibleAdminNavGroup = {
 }
 
 export type AdminAction =
+  | 'dashboard.read'
+  | 'companies.read'
+  | 'companies.write'
+  | 'config.read'
+  | 'config.write'
+  | 'documents.read'
+  | 'payments.read'
   | 'trips.assign_driver'
   | 'trips.update_status'
   | 'documents.review'
+  | 'documents.upload'
   | 'payments.update_status'
+  | 'storage.read_documents'
+  | 'storage.read_evidence'
 
 const ADMIN_PERMISSION_MATRIX = [
   {
@@ -110,10 +120,20 @@ function getAdminRoutePermissions(): AdminRoutePermission[] {
 }
 
 const ACTION_PERMISSIONS = {
+  'dashboard.read': ALL,
+  'companies.read': COM,
+  'companies.write': COM,
+  'config.read': ['super_admin'],
+  'config.write': ['super_admin'],
+  'documents.read': [...FIN, ...VAL],
+  'payments.read': FIN,
   'trips.assign_driver': OPS,
   'trips.update_status': OPS,
   'documents.review': [...FIN, ...VAL],
+  'documents.upload': [...FIN, ...VAL],
   'payments.update_status': FIN,
+  'storage.read_documents': [...FIN, ...VAL],
+  'storage.read_evidence': [...OPS, 'validador'],
 } as const satisfies Record<AdminAction, readonly AdminRole[]>
 
 export function isAdminRole(value: unknown): value is AdminRole {

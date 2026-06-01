@@ -3,7 +3,9 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useAuthStore } from '@/lib/store'
+import type { VisibleAdminNavGroup } from '@/lib/auth/permissions'
 import type { AdminRole, AdminUser } from '@/lib/types'
+import MobileAdminNav from './MobileAdminNav'
 
 const ROLE_LABELS: Record<AdminRole, string> = {
   super_admin: 'Super Admin', admin_operativo: 'Admin Operativo',
@@ -13,9 +15,10 @@ const ROLE_LABELS: Record<AdminRole, string> = {
 
 type Props = {
   admin: AdminUser
+  navGroups: VisibleAdminNavGroup[]
 }
 
-export default function Topbar({ admin }: Props) {
+export default function Topbar({ admin, navGroups }: Props) {
   const router = useRouter()
   const { logout } = useAuthStore()
   const [signingOut, setSigningOut] = useState(false)
@@ -39,6 +42,7 @@ export default function Topbar({ admin }: Props) {
   return (
     <header className="topbar">
       <div className="topbar-left">
+        <MobileAdminNav navGroups={navGroups} />
         <div className="search-box">
           <svg viewBox="0 0 24 24" width={15} height={15} fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>

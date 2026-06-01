@@ -65,7 +65,11 @@ export default function IncidenciaDetailPage() {
       const supabase = createClient()
 
       const [incRes, adminsRes, notesRes] = await Promise.all([
-        supabase.from('incidents').select('*').eq('id', id).single(),
+        supabase
+          .from('incidents')
+          .select('id, trip_id, type, status, description, assigned_to, resolution, created_at, updated_at')
+          .eq('id', id)
+          .single(),
         supabase.from('admin_users').select('id, name, email').eq('active', true).order('name'),
         // Las notas se guardan en una tabla incident_notes si existe,
         // si no existe simplemente quedará vacío sin romper nada
@@ -166,7 +170,7 @@ export default function IncidenciaDetailPage() {
     const { data, error } = await supabase
       .from('incident_notes')
       .insert({ incident_id: id, content: newNote.trim(), author: adminName })
-      .select()
+      .select('id, content, author, created_at')
       .single()
 
     if (error) {

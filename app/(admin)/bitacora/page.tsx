@@ -60,7 +60,7 @@ export default function BitacoraPage() {
 
     const query = supabase
       .from('admin_activity_log')
-      .select('*')
+      .select('id, admin_id, admin_name, action, entity, entity_id, detail, created_at')
       .order('created_at', { ascending: false })
       .range(from, to)
 
