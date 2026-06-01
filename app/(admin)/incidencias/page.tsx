@@ -4,6 +4,7 @@ import { Chip } from '@/components/ui/Chip'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
 import type { IncidentStatus, IncidentType } from '@/lib/types'
+import { useRouter } from 'next/navigation'
 
 const TYPE_LABELS: Record<string, string> = {
   dano_reportado: 'Daño reportado', retraso: 'Retraso',
@@ -52,6 +53,7 @@ function one<T>(value: Relation<T> | undefined) {
 }
 
 export default function IncidenciasPage() {
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -256,6 +258,10 @@ export default function IncidenciasPage() {
                         onClick={() => attendIncident(incident.id)}>
                         {processing === incident.id ? 'Atendiendo…' : 'Atender'}
                       </button>
+                      <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }}
+  onClick={() => router.push(`/incidencias/${incident.id}`)}>Ver</button>
+  <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }}
+  onClick={() => router.push(`/incidencias/${incident.id}`)}>Ver</button>
                     </div>
                   </td>
                 </tr>
