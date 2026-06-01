@@ -1,30 +1,39 @@
 'use client'
-import { usePathname, useRouter } from 'next/navigation'
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
 import { useAuthStore } from '@/lib/store'
+import type { AdminRole, AdminUser } from '@/lib/types'
 
-const TITLES: Record<string, string> = {
-  '/dashboard': 'Dashboard', '/viajes': 'Viajes', '/usuarios': 'Usuarios',
-  '/conductores': 'Conductores', '/evidencia': 'Evidencia',
-  '/incidencias': 'Incidencias', '/pagos': 'Pagos',
-  '/documentos': 'Documentos', '/tarifas': 'Tarifas',
-  '/empresas': 'Empresas', '/reportes': 'Reportes',
-  '/configuracion': 'Configuración',
-}
-
-const ROLE_LABELS: Record<string, string> = {
+const ROLE_LABELS: Record<AdminRole, string> = {
   super_admin: 'Super Admin', admin_operativo: 'Admin Operativo',
   finanzas: 'Finanzas', soporte: 'Soporte',
   validador: 'Validador', comercial: 'Comercial',
 }
 
-export default function Topbar() {
-  const pathname = usePathname()
-  const router = useRouter()
-  const { admin, logout } = useAuthStore()
+type Props = {
+  admin: AdminUser
+}
 
-  function handleLogout() {
+export default function Topbar({ admin }: Props) {
+  const router = useRouter()
+  const { logout } = useAuthStore()
+  const [signingOut, setSigningOut] = useState(false)
+
+  async function handleLogout() {
+    if (signingOut) return
+    setSigningOut(true)
+    const supabase = createClient()
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      console.error('Supabase signOut failed', error)
+      setSigningOut(false)
+      return
+    }
+
     logout()
     router.replace('/login')
+    router.refresh()
   }
 
   return (
@@ -46,17 +55,15 @@ export default function Topbar() {
           </svg>
         </button>
 
-        {admin && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ textAlign: 'right' }}>
-              <p style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>{admin.name}</p>
-              <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ROLE_LABELS[admin.role]}</p>
-            </div>
-            <button className="admin-avatar" onClick={handleLogout} title="Cerrar sesión">
-              👤
-            </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ textAlign: 'right' }}>
+            <p style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>{admin.name}</p>
+            <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>{ROLE_LABELS[admin.role]}</p>
           </div>
-        )}
+          <button className="admin-avatar" onClick={handleLogout} title="Cerrar sesión" aria-label="Cerrar sesión" disabled={signingOut}>
+            👤
+          </button>
+        </div>
       </div>
     </header>
   )

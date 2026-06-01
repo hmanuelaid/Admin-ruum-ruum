@@ -56,6 +56,21 @@ function money(v: number | null) {
   return v ? `$${Number(v).toLocaleString('es-MX')}` : '—'
 }
 
+async function postAdminOperation(path: string, payload: unknown) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(typeof data.error === 'string' ? data.error : 'No se pudo completar la operación')
+  }
+
+  return data
+}
+
 // ── Componente ─────────────────────────────────────────────────────────────────
 export default function ViajeDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -122,42 +137,36 @@ export default function ViajeDetailPage() {
   async function handleStatusChange(newStatus: string) {
     if (!trip) return
     setSaving(true)
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('trips')
-      .update({ status: newStatus, updated_at: new Date().toISOString() })
-      .eq('id', id)
-
-    if (error) {
-      showToast(`Error: ${error.message}`)
-    } else {
+    try {
+      await postAdminOperation('/api/admin/trips/status', {
+        tripId: id,
+        status: newStatus,
+        expectedStatus: trip.status,
+      })
       setTrip(prev => prev ? { ...prev, status: newStatus } : prev)
       showToast(`Estatus actualizado a "${STATUS_LABELS[newStatus] ?? newStatus}"`)
+    } catch (error) {
+      showToast(`Error: ${error instanceof Error ? error.message : 'operación fallida'}`)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   // ── Asignar conductor ──────────────────────────────────────────────────────
   async function handleAssignDriver(driverId: string) {
     if (!driverId) return
     setSaving(true)
-    const supabase = createClient()
-    const now = new Date().toISOString()
-
-    const [tripUpdate, driverUpdate] = await Promise.all([
-      supabase.from('trips').update({ driver_id: driverId, status: 'conductor_asignado', updated_at: now }).eq('id', id),
-      supabase.from('drivers').update({ status: 'en_viaje' }).eq('id', driverId),
-    ])
-
-    if (tripUpdate.error) {
-      showToast(`Error: ${tripUpdate.error.message}`)
-    } else {
+    try {
+      await postAdminOperation('/api/admin/trips/assign-driver', { tripId: id, driverId })
       const selected = driverOpts.find(d => d.id === driverId)
       setTrip(prev => prev ? { ...prev, driver_id: driverId, status: 'conductor_asignado' } : prev)
       setDriver({ id: driverId, name: selected?.name ?? null, phone: null, status: 'en_viaje' })
       showToast(`✅ Conductor ${selected?.name ?? ''} asignado`)
+    } catch (error) {
+      showToast(`Error: ${error instanceof Error ? error.message : 'operación fallida'}`)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   // ── Guardar notas ──────────────────────────────────────────────────────────

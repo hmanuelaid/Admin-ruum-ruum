@@ -185,7 +185,7 @@ export default function DashboardPage() {
 
   // Carga inicial + realtime
   useEffect(() => {
-    void loadDashboard()
+    queueMicrotask(() => void loadDashboard())
     const supabase = createClient()
 
     const channel = supabase.channel('dashboard-realtime')

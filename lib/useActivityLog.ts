@@ -1,6 +1,4 @@
 import { useCallback } from 'react'
-import { createClient } from '@/lib/supabase'
-import { useAuthStore } from '@/lib/store'
 
 type Entity = 'trip' | 'driver' | 'user' | 'payment' | 'incident' | 'document' | 'config' | 'admin'
 type Action = 'create' | 'update' | 'delete' | 'approve' | 'reject' | 'assign' | 'escalate' | 'resolve' | 'login' | 'logout' | 'export'
@@ -13,23 +11,22 @@ interface LogParams {
 }
 
 export function useActivityLog() {
-  const { admin } = useAuthStore()
-
   const log = useCallback(async ({ action, entity, entityId, detail }: LogParams) => {
     try {
-      const supabase = createClient()
-      await supabase.from('admin_activity_log').insert({
-        admin_id:   admin?.id   ?? null,
-        admin_name: admin?.name ?? null,
-        action,
-        entity:     entity   ?? null,
-        entity_id:  entityId ?? null,
-        detail:     detail   ?? null,
+      await fetch('/api/admin/activity-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          entity,
+          entityId,
+          detail,
+        }),
       })
     } catch {
       // La bitácora nunca debe romper el flujo principal
     }
-  }, [admin])
+  }, [])
 
   return { log }
 }

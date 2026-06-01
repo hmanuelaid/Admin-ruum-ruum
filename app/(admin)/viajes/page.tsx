@@ -68,6 +68,21 @@ function money(value: number | null | undefined) {
   return `$${Number(value ?? 0).toLocaleString('es-MX')}`
 }
 
+async function postAdminOperation(path: string, payload: unknown) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(typeof data.error === 'string' ? data.error : 'No se pudo completar la operación')
+  }
+
+  return data
+}
+
 export default function ViajesPage() {
   const [tab, setTab] = useState<Tab>('Todos')
   const [search, setSearch] = useState('')
@@ -192,53 +207,32 @@ export default function ViajesPage() {
 
   async function assignDriver(tripId: string, driverId: string) {
     setAssigning(tripId)
-    const now = new Date().toISOString()
-    const supabase = createClient()
-    const { error: tripError } = await supabase
-      .from('trips')
-      .update({ driver_id: driverId, status: 'conductor_asignado', updated_at: now })
-      .eq('id', tripId)
-
-    if (tripError) {
-      showToast(`Error al asignar conductor: ${tripError.message}`)
-      setAssigning(null)
-      return
-    }
-
-    const { error: driverError } = await supabase
-      .from('drivers')
-      .update({ status: 'en_viaje', updated_at: now })
-      .eq('id', driverId)
-
-    if (driverError) {
-      showToast(`Conductor asignado, pero no se actualizó su estatus: ${driverError.message}`)
-    } else {
+    try {
+      await postAdminOperation('/api/admin/trips/assign-driver', { tripId, driverId })
       showToast('Conductor asignado')
+      void loadData(false)
+    } catch (error) {
+      showToast(`Error al asignar conductor: ${error instanceof Error ? error.message : 'operación fallida'}`)
+    } finally {
+      setAssigning(null)
     }
-
-    setAssigning(null)
-    void loadData(false)
   }
 
-  async function changeStatus(tripId: string, status: string) {
+  async function changeStatus(tripId: string, status: string, expectedStatus: string) {
     setUpdating(tripId)
     const now = new Date().toISOString()
-    const supabase = createClient()
-    const { error: updateError } = await supabase
-      .from('trips')
-      .update({ status, updated_at: now })
-      .eq('id', tripId)
-
-    if (updateError) {
-      showToast(`No se pudo actualizar estatus: ${updateError.message}`)
-    } else {
+    try {
+      await postAdminOperation('/api/admin/trips/status', { tripId, status, expectedStatus })
       setTrips(prev => prev.map(trip =>
         trip.id === tripId ? { ...trip, status, updated_at: now } : trip
       ))
       showToast('Estatus actualizado')
+    } catch (error) {
+      showToast(`No se pudo actualizar estatus: ${error instanceof Error ? error.message : 'operación fallida'}`)
+      void loadData(false)
+    } finally {
+      setUpdating(null)
     }
-
-    setUpdating(null)
   }
 
   return (
@@ -345,27 +339,15 @@ export default function ViajesPage() {
                         : <span className="chip chip-warning">Sin conductor</span>
                     }
                   </td>
-                  <td>
-  <div className="td-actions">
-    <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }}
-      onClick={() => router.push(`/viajes/${trip.id}`)}>Ver</button>
-    <select className="filter-select" style={{ fontSize: 11 }}
-      value={status}
-      onChange={event => changeStatus(trip.id, event.target.value)}
-      disabled={updating === trip.id}>
-      {Object.entries(STATUS_LABELS).map(([key, value]) => (
-        <option key={key} value={key}>{value}</option>
-      ))}
-    </select>
-  </div>
-</td>
                   <td className="td-bold">{money(trip.client_price_mxn)}</td>
                   <td><Chip status={status || undefined}>{STATUS_LABELS[status] ?? 'Sin estatus'}</Chip></td>
                   <td>
                     <div className="td-actions">
+                      <button className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }}
+                        onClick={() => router.push(`/viajes/${trip.id}`)}>Ver</button>
                       <select className="filter-select" style={{ fontSize: 11 }}
                         value={status}
-                        onChange={event => changeStatus(trip.id, event.target.value)}
+                        onChange={event => changeStatus(trip.id, event.target.value, status)}
                         disabled={updating === trip.id}>
                         {Object.entries(STATUS_LABELS).map(([key, value]) => (
                           <option key={key} value={key}>{value}</option>

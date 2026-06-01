@@ -1,116 +1,288 @@
-'use client'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { useAuthStore } from '@/lib/store'
-import type { ReactElement } from 'react'
-import type { AdminRole } from '@/lib/types'
+import { notFound } from 'next/navigation'
+import { Chip } from '@/components/ui/Chip'
+import { createSupabaseServerClient } from '@/lib/supabase-server'
+import type { DriverStatus } from '@/lib/types'
 
-type NavItem = {
-  href: string
-  label: string
-  icon: () => ReactElement
-  roles: AdminRole[]
-  badge?: number
+export const dynamic = 'force-dynamic'
+
+type Props = {
+  params: Promise<{ id: string }>
 }
 
-type NavGroup = {
-  group: string
-  items: NavItem[]
-  roles: AdminRole[]
+type DriverRow = {
+  id: string
+  name: string | null
+  phone: string | null
+  email: string | null
+  state: string | null
+  status: DriverStatus | string | null
+  certified: boolean | null
+  rating: number | null
+  trips_completed: number | null
+  earnings: number | null
+  bank_account: string | null
+  created_at: string | null
 }
 
-const ALL: AdminRole[] = ['super_admin', 'admin_operativo', 'finanzas', 'soporte', 'validador', 'comercial']
-const OPS: AdminRole[] = ['super_admin', 'admin_operativo', 'soporte']
-const FIN: AdminRole[] = ['super_admin', 'admin_operativo', 'finanzas']
-const VAL: AdminRole[] = ['super_admin', 'admin_operativo', 'validador']
-const COM: AdminRole[] = ['super_admin', 'admin_operativo', 'comercial']
+type DocumentRow = {
+  id: string
+  type: string | null
+  status: string | null
+  url: string | null
+  uploaded_at: string | null
+  expires_at: string | null
+}
 
-const NAV: NavGroup[] = [
-  {
-    group: 'Operación', roles: ALL,
-    items: [
-      { href: '/dashboard', label: 'Dashboard', roles: ALL,
-        icon: () => <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg> },
-      { href: '/viajes', label: 'Viajes', badge: 2, roles: OPS,
-        icon: () => <svg viewBox="0 0 24 24"><path d="M5 17h14"/><path d="M7 17v2"/><path d="M17 17v2"/><path d="m6 13 1.5-5h9L18 13"/><path d="M4 13h16v4H4Z"/></svg> },
-      { href: '/usuarios', label: 'Usuarios', roles: OPS,
-        icon: () => <svg viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/><path d="M21 21v-2a4 4 0 0 0-3-3.85"/></svg> },
-      { href: '/conductores', label: 'Conductores', roles: [...OPS, 'validador'],
-        icon: () => <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg> },
-      { href: '/evidencia', label: 'Evidencia', badge: 3, roles: [...OPS, 'validador'],
-        icon: () => <svg viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/></svg> },
-      { href: '/incidencias', label: 'Incidencias', badge: 1, roles: OPS,
-        icon: () => <svg viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> },
-    ],
-  },
-  {
-    group: 'Finanzas', roles: FIN,
-    items: [
-      { href: '/pagos', label: 'Pagos', roles: FIN,
-        icon: () => <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg> },
-      { href: '/documentos', label: 'Documentos', roles: [...FIN, ...VAL],
-        icon: () => <span>📄</span> },
-      { href: '/tarifas', label: 'Tarifas', roles: FIN,
-        icon: () => <svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg> },
-    ],
-  },
-  {
-    group: 'Comercial', roles: COM,
-    items: [
-      { href: '/empresas', label: 'Empresas', roles: COM,
-        icon: () => <svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9v.01"/><path d="M9 12v.01"/><path d="M9 15v.01"/><path d="M9 18v.01"/></svg> },
-      { href: '/reportes', label: 'Reportes', roles: [...COM, ...FIN],
-        icon: () => <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg> },
-    ],
-  },
-  {
-    group: 'Sistema', roles: ['super_admin', 'admin_operativo'],
-    items: [
-      { href: '/configuracion', label: 'Configuración', roles: ['super_admin'],
-        icon: () => <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
-      { href: '/bitacora', label: 'Bitácora', roles: ['super_admin', 'admin_operativo'],
-        icon: () => <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg> },
-    ],
-  },
-]
+type TripRow = {
+  id: string
+  status: string | null
+  service_type: string | null
+  origin_address: string | null
+  destination_address: string | null
+  vehicle_plates: string | null
+  client_price_mxn: number | null
+  driver_pay_mxn: number | null
+  created_at: string | null
+}
 
-export default function Sidebar() {
-  const pathname = usePathname()
-  const { admin } = useAuthStore()
-  const role = admin?.role
+const STATUS_LABELS: Record<string, string> = {
+  disponible: 'Disponible',
+  en_viaje: 'En viaje',
+  pendiente_validacion: 'Pendiente',
+  activo: 'Activo',
+  no_disponible: 'No disponible',
+  suspendido: 'Suspendido',
+  bloqueado: 'Bloqueado',
+  documentacion_vencida: 'Doc. vencida',
+}
 
-  const visibleNav = NAV
-    .map(group => ({
-      ...group,
-      items: group.items.filter(item => !role || item.roles.includes(role)),
-    }))
-    .filter(group => group.items.length > 0)
+const TRIP_STATUS_LABELS: Record<string, string> = {
+  solicitud_recibida: 'Solicitud',
+  pendiente_revision: 'En revisión',
+  pendiente_asignacion: 'Sin asignar',
+  conductor_asignado: 'Asignado',
+  conductor_en_camino: 'En camino',
+  recoleccion_proceso: 'Recolección',
+  evidencia_inicial_pendiente: 'Ev. inicial pendiente',
+  traslado_curso: 'En traslado',
+  entrega_proceso: 'Entrega',
+  evidencia_final_pendiente: 'Ev. final pendiente',
+  finalizado: 'Finalizado',
+  cancelado: 'Cancelado',
+  incidente: 'Incidente',
+}
+
+const SERVICE_LABELS: Record<string, string> = {
+  personal: 'Personal',
+  empresarial: 'Empresarial',
+  agencia: 'Agencia',
+  lote: 'Lote',
+  flotilla: 'Flotilla',
+  entrega_cliente: 'Entrega a cliente',
+  recuperacion: 'Recuperación',
+  especial: 'Especial',
+}
+
+function money(value: number | null) {
+  return value != null ? `$${Number(value).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : '—'
+}
+
+function date(value: string | null) {
+  return value ? new Date(value).toLocaleDateString('es-MX') : '—'
+}
+
+export default async function ConductorDetailPage({ params }: Props) {
+  const { id } = await params
+  const supabase = await createSupabaseServerClient()
+
+  const [driverRes, docsRes, tripsRes] = await Promise.all([
+    supabase
+      .from('drivers')
+      .select('id, name, phone, email, state, status, certified, rating, trips_completed, earnings, bank_account, created_at')
+      .eq('id', id)
+      .maybeSingle(),
+    supabase
+      .from('documents')
+      .select('id, type, status, url, uploaded_at, expires_at')
+      .eq('owner_id', id)
+      .eq('owner_type', 'driver')
+      .order('uploaded_at', { ascending: false }),
+    supabase
+      .from('trips')
+      .select('id, status, service_type, origin_address, destination_address, vehicle_plates, client_price_mxn, driver_pay_mxn, created_at')
+      .eq('driver_id', id)
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ])
+
+  if (driverRes.error || !driverRes.data) {
+    notFound()
+  }
+
+  const driver = driverRes.data as DriverRow
+  const documents = (docsRes.data ?? []) as DocumentRow[]
+  const trips = (tripsRes.data ?? []) as TripRow[]
+  const documentWarning = docsRes.error?.message ?? null
+  const tripWarning = tripsRes.error?.message ?? null
+  const activeTrips = trips.filter(trip => ['conductor_asignado', 'conductor_en_camino', 'recoleccion_proceso', 'traslado_curso', 'entrega_proceso'].includes(trip.status ?? '')).length
 
   return (
-    <aside className="sidebar">
-      <div className="sidebar-brand">
-        <div className="logo-mark">R</div>
-        <div className="brand-text">
-          <p style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.2 }}>Ruum Ruum</p>
-          <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>Admin · MoviliaX</p>
+    <>
+      <div className="page-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Link className="btn-icon" href="/conductores" title="Regresar" aria-label="Regresar">
+            <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5"/><path d="m12 19-7-7 7-7"/>
+            </svg>
+          </Link>
+          <div>
+            <h1 className="page-title">{driver.name ?? 'Conductor'}</h1>
+            <p className="page-sub">{driver.email ?? 'Sin correo'} · {driver.phone ?? 'Sin telefono'}</p>
+          </div>
         </div>
+        <Chip status={driver.status ?? undefined}>{STATUS_LABELS[driver.status ?? ''] ?? driver.status ?? '—'}</Chip>
       </div>
 
-      <nav className="sidebar-nav">
-        {visibleNav.map(({ group, items }) => (
-          <div key={group} className="sidebar-group">
-            <p className="sidebar-group-label">{group}</p>
-            {items.map(({ href, label, icon: Icon, badge }) => (
-              <Link key={href} href={href}
-                className={`nav-item${pathname === href ? ' is-active' : ''}`}>
-                <Icon />
-                <span>{label}</span>
-                {badge ? <span className="nav-badge">{badge}</span> : null}
-              </Link>
-            ))}
+      <div className="metrics-grid" style={{ marginBottom: '1.5rem' }}>
+        {[
+          { label: 'Viajes completados', value: driver.trips_completed ?? 0 },
+          { label: 'Viajes activos', value: activeTrips },
+          { label: 'Documentos', value: documents.length },
+          { label: 'Ganancias', value: money(driver.earnings) },
+        ].map(metric => (
+          <div key={metric.label} className="metric-card">
+            <div className="icon" style={{ background: 'var(--primary-dim)', fontSize: 20 }}>—</div>
+            <p className="value">{metric.value}</p>
+            <p className="label">{metric.label}</p>
           </div>
         ))}
-      </nav>
-    </aside>
+      </div>
+
+      <div className="detail-grid">
+        <div className="stack">
+          <div className="table-wrap" style={{ padding: '1rem 1.25rem' }}>
+            <p className="card-title" style={{ marginBottom: 16 }}>Datos del conductor</p>
+            <div className="detail-grid-2">
+              {[  
+                ['Estado', driver.state ?? '—'],
+                ['Certificado', driver.certified ? 'Sí' : 'No'],
+                ['Rating', driver.rating != null ? driver.rating.toFixed(1) : '—'],
+                ['Viajes completados', String(driver.trips_completed ?? 0)],
+                ['Ganancias', money(driver.earnings)],
+                ['Registro', date(driver.created_at)],
+              ].map(([label, value]) => (
+                <div key={label} className="detail-section">
+                  <span className="detail-label">{label}</span>
+                  <span className="detail-value">{value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="table-wrap">
+            {documentWarning && (
+              <div className="alert warning" style={{ margin: '1rem 1.25rem 0' }}>
+                <span>!</span>
+                <p>No se pudieron cargar documentos: {documentWarning}</p>
+              </div>
+            )}
+            <table>
+              <thead>
+                <tr>
+                  <th>Documento</th>
+                  <th>Estatus</th>
+                  <th>Subido</th>
+                  <th>Vence</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.length === 0 ? (
+                  <tr>
+                    <td colSpan={5}>
+                      <div className="empty-state">
+                        <p className="muted">Sin documentos registrados</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : documents.map(doc => (
+                  <tr key={doc.id}>
+                    <td className="td-bold">{doc.type ?? '—'}</td>
+                    <td><Chip status={doc.status ?? undefined}>{doc.status ?? '—'}</Chip></td>
+                    <td className="td-muted">{date(doc.uploaded_at)}</td>
+                    <td className="td-muted">{date(doc.expires_at)}</td>
+                    <td>
+                      {doc.url ? (
+                        <a className="btn-secondary" style={{ fontSize: 12, padding: '4px 10px' }} href={doc.url} target="_blank" rel="noreferrer">
+                          Ver archivo
+                        </a>
+                      ) : (
+                        <span className="td-muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-wrap">
+            {tripWarning && (
+              <div className="alert warning" style={{ margin: '1rem 1.25rem 0' }}>
+                <span>!</span>
+                <p>No se pudieron cargar viajes: {tripWarning}</p>
+              </div>
+            )}
+            <table>
+              <thead>
+                <tr>
+                  <th>Viaje</th>
+                  <th>Servicio</th>
+                  <th>Ruta</th>
+                  <th>Placas</th>
+                  <th>Pago</th>
+                  <th>Estatus</th>
+                  <th>Fecha</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trips.length === 0 ? (
+                  <tr>
+                    <td colSpan={7}>
+                      <div className="empty-state">
+                        <p className="muted">Sin viajes registrados para este conductor</p>
+                      </div>
+                    </td>
+                  </tr>
+                ) : trips.map(trip => (
+                  <tr key={trip.id}>
+                    <td>
+                      <Link className="mono td-bold" href={`/viajes/${trip.id}`}>
+                        {trip.id.slice(0, 8).toUpperCase()}
+                      </Link>
+                    </td>
+                    <td className="td-muted">{SERVICE_LABELS[trip.service_type ?? ''] ?? trip.service_type ?? '—'}</td>
+                    <td style={{ maxWidth: 240 }}>
+                      <p style={{ fontSize: 13, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{trip.origin_address ?? '—'}</p>
+                      <p className="td-muted" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{trip.destination_address ?? '—'}</p>
+                    </td>
+                    <td className="td-muted">{trip.vehicle_plates ?? '—'}</td>
+                    <td className="td-bold">{money(trip.driver_pay_mxn)}</td>
+                    <td><Chip status={trip.status ?? undefined}>{TRIP_STATUS_LABELS[trip.status ?? ''] ?? trip.status ?? '—'}</Chip></td>
+                    <td className="td-muted">{date(trip.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="table-wrap" style={{ padding: '1rem 1.25rem' }}>
+          <p className="card-title" style={{ marginBottom: 16 }}>Cuenta bancaria</p>
+          <p className="mono" style={{ wordBreak: 'break-word' }}>{driver.bank_account ?? 'Sin cuenta registrada'}</p>
+        </div>
+      </div>
+    </>
   )
 }

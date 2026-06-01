@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useAuthStore } from '@/lib/store'
+import { isAdminRole } from '@/lib/auth/permissions'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -23,14 +24,22 @@ export default function LoginPage() {
     // Buscar perfil en admin_users
     const { data: admin } = await supabase
       .from('admin_users')
-      .select('*')
+      .select('id, name, email, role')
       .eq('auth_id', data.user.id)
-      .single()
+      .eq('active', true)
+      .maybeSingle()
 
-    if (!admin) { setError('No tienes acceso como administrador'); setLoading(false); return }
+    if (!admin || !isAdminRole(admin.role)) {
+      await supabase.auth.signOut()
+      setError('No tienes acceso como administrador')
+      setLoading(false)
+      return
+    }
 
     setAdmin({ id: admin.id, name: admin.name, email: admin.email, role: admin.role })
-    router.replace('/dashboard')
+    const searchParams = new URLSearchParams(window.location.search)
+    const nextPath = searchParams.get('next')
+    router.replace(nextPath?.startsWith('/') && !nextPath.startsWith('//') ? nextPath : '/dashboard')
   }
 
   return (

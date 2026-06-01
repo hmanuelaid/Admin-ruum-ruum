@@ -88,8 +88,10 @@ export default function BitacoraPage() {
   }, [page, entityFilter, actionFilter, showToast])
 
   useEffect(() => {
-    setLoading(true)
-    void loadLogs(true)
+    queueMicrotask(() => {
+      setLoading(true)
+      void loadLogs(true)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entityFilter, actionFilter])
 
@@ -122,35 +124,6 @@ export default function BitacoraPage() {
         </div>
       </div>
 
-      {/* SQL helper — solo visible si no hay logs */}
-      {!loading && logs.length === 0 && (
-        <div className="table-wrap" style={{ padding: '1.25rem', marginBottom: 20 }}>
-          <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>
-            SQL — crear tabla admin_activity_log
-          </p>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
-            Ejecuta esto en Supabase para activar la bitácora:
-          </p>
-          <pre style={{ fontSize: 11, background: 'var(--surface-2)', padding: '12px', borderRadius: 6, overflow: 'auto', lineHeight: 1.6, color: 'var(--text)' }}>
-{`create table public.admin_activity_log (
-  id         uuid primary key default gen_random_uuid(),
-  admin_id   uuid references public.admin_users(id) on delete set null,
-  admin_name text,
-  action     text not null,
-  entity     text,
-  entity_id  text,
-  detail     text,
-  created_at timestamptz default now()
-);
-alter table public.admin_activity_log enable row level security;
-create policy "Admins pueden leer bitácora"
-  on public.admin_activity_log for select using (true);
-create policy "Admins pueden insertar en bitácora"
-  on public.admin_activity_log for insert with check (true);`}
-          </pre>
-        </div>
-      )}
-
       {/* Filtros */}
       <div className="filters-bar">
         <div className="filter-search">
@@ -180,7 +153,7 @@ create policy "Admins pueden insertar en bitácora"
             <p style={{ fontWeight: 600 }}>Sin registros</p>
             <p className="muted">
               {logs.length === 0
-                ? 'Crea la tabla admin_activity_log en Supabase para empezar a registrar actividad'
+                ? 'No hay actividad registrada todavía'
                 : 'No hay entradas que coincidan con los filtros'}
             </p>
           </div>

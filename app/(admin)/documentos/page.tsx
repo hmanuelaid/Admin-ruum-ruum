@@ -36,12 +36,22 @@ const DOC_LABELS: Record<string, string> = {
   rfc:           'RFC',
 }
 
-const REQUIRED_DOCS: Record<Document['owner_type'], string[]> = {
-  user: ['ine', 'comprobante'],
-  driver: ['ine', 'licencia', 'comprobante', 'antecedentes', 'foto_perfil'],
-}
-
 type FilterTab = 'todos' | 'en_revision' | 'aprobado' | 'rechazado'
+
+async function postAdminOperation(path: string, payload: unknown) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(typeof data.error === 'string' ? data.error : 'No se pudo completar la operación')
+  }
+
+  return data
+}
 
 export default function DocumentosAdminPage() {
   const [docs, setDocs]             = useState<Document[]>([])
@@ -52,47 +62,6 @@ export default function DocumentosAdminPage() {
   const [processing, setProcessing] = useState(false)
   const [search, setSearch]         = useState('')
   const { showToast } = useAppStore()
-
-  async function syncOwnerValidation(doc: Document) {
-    const supabase = createClient()
-    const required = REQUIRED_DOCS[doc.owner_type]
-    const { data, error } = await supabase
-      .from('documents')
-      .select('type, status')
-      .eq('owner_id', doc.owner_id)
-      .eq('owner_type', doc.owner_type)
-      .in('type', required)
-
-    if (error) {
-      showToast(`Documento aprobado, pero no se pudo validar al owner: ${error.message}`)
-      return
-    }
-
-    const approvedTypes = new Set(
-      (data ?? [])
-        .filter(item => item.status === 'aprobado')
-        .map(item => item.type)
-    )
-    const allApproved = required.every(type => approvedTypes.has(type))
-
-    if (!allApproved) return
-
-    if (doc.owner_type === 'driver') {
-      const { error: driverError } = await supabase
-        .from('drivers')
-        .update({ status: 'activo' })
-        .eq('id', doc.owner_id)
-
-      if (driverError) showToast(`Documentos completos, pero no se activo el conductor: ${driverError.message}`)
-    } else {
-      const { error: userError } = await supabase
-        .from('app_users')
-        .update({ status: 'activo' })
-        .eq('id', doc.owner_id)
-
-      if (userError) showToast(`Documentos completos, pero no se activo el usuario: ${userError.message}`)
-    }
-  }
 
   // Carga inicial
   useEffect(() => {
@@ -135,81 +104,68 @@ export default function DocumentosAdminPage() {
   // Aprobar
   async function handleApprove(doc: Document) {
     setProcessing(true)
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('documents')
-      .update({
+    try {
+      await postAdminOperation('/api/admin/documents/review', {
+        documentId: doc.id,
         status: 'aprobado',
-        notes: null,
-        updated_at: new Date().toISOString(),
+        expectedStatus: doc.status,
       })
-      .eq('id', doc.id)
-
-    if (error) {
-      showToast(`No se pudo aprobar el documento: ${error.message}`)
-      setProcessing(false)
-      return
-    }
-
-    const { error: notificationError } = await supabase.from('notifications').insert({
-      user_id:   doc.owner_id,
-      user_type: doc.owner_type,
-      title:     'Documento aprobado',
-      body:      `Tu ${DOC_LABELS[doc.type] ?? doc.type} fue aprobado correctamente.`,
-      type:      'document',
-      metadata:  { doc_id: doc.id, doc_type: doc.type },
-    })
-
-    if (notificationError) {
-      showToast(`Documento aprobado, pero no se pudo notificar: ${notificationError.message}`)
-    } else {
+      setDocs(prev => prev.map(item =>
+        item.id === doc.id ? { ...item, status: 'aprobado', notes: undefined } : item
+      ))
       showToast('Documento aprobado')
+      setSelected(null)
+      setRejectNotes('')
+    } catch (error) {
+      showToast(`No se pudo aprobar el documento: ${error instanceof Error ? error.message : 'operación fallida'}`)
+    } finally {
+      setProcessing(false)
     }
-
-    await syncOwnerValidation(doc)
-    setProcessing(false)
-    setSelected(null)
-    setRejectNotes('')
   }
 
   // Rechazar
   async function handleReject(doc: Document) {
     if (!rejectNotes.trim()) return
     setProcessing(true)
-    const supabase = createClient()
-    const { error } = await supabase
-      .from('documents')
-      .update({
+    const notes = rejectNotes.trim()
+    try {
+      await postAdminOperation('/api/admin/documents/review', {
+        documentId: doc.id,
         status: 'rechazado',
-        notes: rejectNotes.trim(),
-        updated_at: new Date().toISOString(),
+        notes,
+        expectedStatus: doc.status,
       })
-      .eq('id', doc.id)
-
-    if (error) {
-      showToast(`No se pudo rechazar el documento: ${error.message}`)
-      setProcessing(false)
-      return
-    }
-
-    const { error: notificationError } = await supabase.from('notifications').insert({
-      user_id:   doc.owner_id,
-      user_type: doc.owner_type,
-      title:     'Documento rechazado',
-      body:      `Tu ${DOC_LABELS[doc.type] ?? doc.type} fue rechazado. Motivo: ${rejectNotes.trim()}`,
-      type:      'document',
-      metadata:  { doc_id: doc.id, doc_type: doc.type, notes: rejectNotes.trim() },
-    })
-
-    if (notificationError) {
-      showToast(`Documento rechazado, pero no se pudo notificar: ${notificationError.message}`)
-    } else {
+      setDocs(prev => prev.map(item =>
+        item.id === doc.id ? { ...item, status: 'rechazado', notes } : item
+      ))
       showToast('Documento rechazado')
+      setSelected(null)
+      setRejectNotes('')
+    } catch (error) {
+      showToast(`No se pudo rechazar el documento: ${error instanceof Error ? error.message : 'operación fallida'}`)
+    } finally {
+      setProcessing(false)
     }
+  }
 
-    setProcessing(false)
-    setSelected(null)
-    setRejectNotes('')
+  async function handleResetReview(doc: Document) {
+    setProcessing(true)
+    try {
+      await postAdminOperation('/api/admin/documents/review', {
+        documentId: doc.id,
+        status: 'en_revision',
+        expectedStatus: doc.status,
+      })
+      setDocs(prev => prev.map(item =>
+        item.id === doc.id ? { ...item, status: 'en_revision', notes: undefined } : item
+      ))
+      setSelected(prev => prev ? { ...prev, status: 'en_revision', notes: undefined } : prev)
+      showToast('Documento en revisión')
+    } catch (error) {
+      showToast(`No se pudo volver a poner en revisión: ${error instanceof Error ? error.message : 'operación fallida'}`)
+    } finally {
+      setProcessing(false)
+    }
   }
 
   // Filtros
@@ -565,19 +521,8 @@ export default function DocumentosAdminPage() {
                   Este documento ya fue revisado.
                 </p>
                 <button
-                  onClick={async () => {
-                    const supabase = createClient()
-                    const { error } = await supabase
-                      .from('documents')
-                      .update({ status: 'en_revision', notes: null, updated_at: new Date().toISOString() })
-                      .eq('id', selected.id)
-
-                    if (error) {
-                      showToast(`No se pudo volver a poner en revision: ${error.message}`)
-                    } else {
-                      showToast('Documento en revision')
-                    }
-                  }}
+                  onClick={() => handleResetReview(selected)}
+                  disabled={processing}
                   style={{
                     marginTop: 8, background: 'none', border: 'none',
                     color: 'var(--primary)', fontSize: 13, cursor: 'pointer',

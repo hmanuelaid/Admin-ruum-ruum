@@ -2,26 +2,20 @@
 // ─── lib/store.ts ─────────────────────────────────────────────────────────────
 'use client'
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import type { AdminUser, Trip, Driver } from './types'
 
 interface AuthState {
   admin: AdminUser | null
-  isAuthenticated: boolean
   setAdmin: (admin: AdminUser) => void
   logout: () => void
 }
 
 export const useAuthStore = create<AuthState>()(
-  persist(
-    (set) => ({
-      admin: null,
-      isAuthenticated: false,
-      setAdmin: (admin) => set({ admin, isAuthenticated: true }),
-      logout: () => set({ admin: null, isAuthenticated: false }),
-    }),
-    { name: 'ruum-admin-auth' }
-  )
+  (set) => ({
+    admin: null,
+    setAdmin: (admin) => set({ admin }),
+    logout: () => set({ admin: null }),
+  })
 )
 
 interface AppState {

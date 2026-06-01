@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:routes": "node scripts/verify-conductor-route.mjs && node scripts/verify-admin-atomic-operations.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.10.3",

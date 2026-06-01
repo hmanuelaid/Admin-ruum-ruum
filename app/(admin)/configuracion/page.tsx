@@ -2,7 +2,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAppStore } from '@/lib/store'
-import { useAuthStore } from '@/lib/store'
 
 // ── Tipos ──────────────────────────────────────────────────────────────────────
 interface SystemConfig {
@@ -43,8 +42,6 @@ const DEFAULT_CONFIG: Omit<SystemConfig, 'id'>[] = [
 // ── Componente ─────────────────────────────────────────────────────────────────
 export default function ConfiguracionPage() {
   const { showToast } = useAppStore()
-  const { admin } = useAuthStore()
-  const isSuperAdmin = admin?.role === 'super_admin'
 
   const [configs,  setConfigs]  = useState<SystemConfig[]>([])
   const [edits,    setEdits]    = useState<Record<string, string>>({})
@@ -84,7 +81,9 @@ export default function ConfiguracionPage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { void loadConfig() }, [loadConfig])
+  useEffect(() => {
+    queueMicrotask(() => void loadConfig())
+  }, [loadConfig])
 
   function handleChange(key: string, value: string) {
     setEdits(prev => ({ ...prev, [key]: value }))
@@ -92,7 +91,6 @@ export default function ConfiguracionPage() {
   }
 
   async function handleSave() {
-    if (!isSuperAdmin) return
     setSaving(true)
     const supabase = createClient()
 
@@ -135,7 +133,7 @@ export default function ConfiguracionPage() {
           <h1 className="page-title">Configuración</h1>
           <p className="page-sub">Parámetros operativos del sistema · solo super_admin</p>
         </div>
-        {isSuperAdmin && dirty.size > 0 && (
+        {dirty.size > 0 && (
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn-secondary" onClick={handleReset} disabled={saving}>
               Descartar cambios
@@ -146,12 +144,6 @@ export default function ConfiguracionPage() {
           </div>
         )}
       </div>
-
-      {!isSuperAdmin && (
-        <div style={{ padding: '12px 16px', background: 'rgba(239,68,68,.08)', borderRadius: 8, marginBottom: 20, fontSize: 13, color: 'var(--danger)' }}>
-          ⚠️ Solo el super_admin puede modificar la configuración. Estás en modo lectura.
-        </div>
-      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 20, alignItems: 'start' }}>
 
@@ -204,14 +196,14 @@ export default function ConfiguracionPage() {
                       {config.type === 'boolean' ? (
                         <div style={{ display: 'flex', gap: 8 }}>
                           {['true', 'false'].map(opt => (
-                            <button key={opt} disabled={!isSuperAdmin}
+                            <button key={opt}
                               onClick={() => handleChange(config.key, opt)}
                               style={{
                                 flex: 1, padding: '8px', fontSize: 12, borderRadius: 6,
                                 border: `1px solid ${val === opt ? 'var(--primary)' : 'var(--border)'}`,
                                 background: val === opt ? 'var(--primary-dim)' : 'var(--surface-2)',
                                 color: val === opt ? 'var(--primary)' : 'var(--text-muted)',
-                                cursor: isSuperAdmin ? 'pointer' : 'not-allowed', fontWeight: val === opt ? 600 : 400,
+                                cursor: 'pointer', fontWeight: val === opt ? 600 : 400,
                               }}>
                               {opt === 'true' ? '✓ Sí' : '✗ No'}
                             </button>
@@ -223,7 +215,6 @@ export default function ConfiguracionPage() {
                             type={config.type === 'number' || config.type === 'percent' ? 'number' : 'text'}
                             value={val}
                             onChange={e => handleChange(config.key, e.target.value)}
-                            disabled={!isSuperAdmin}
                             min={0}
                             style={{
                               width: '100%', padding: '8px 12px',
@@ -251,21 +242,6 @@ export default function ConfiguracionPage() {
         </div>
       </div>
 
-      {/* SQL helper */}
-      <div className="table-wrap" style={{ padding: '1rem 1.25rem', marginTop: 20 }}>
-        <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>SQL — crear tabla system_config</p>
-        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>Ejecuta esto en Supabase si la tabla no existe aún:</p>
-        <pre style={{ fontSize: 11, background: 'var(--surface-2)', padding: '12px', borderRadius: 6, overflow: 'auto', lineHeight: 1.6, color: 'var(--text)' }}>
-{`create table public.system_config (
-  id         uuid primary key default gen_random_uuid(),
-  key        text not null unique,
-  value      text not null,
-  updated_at timestamptz default now()
-);
-alter table public.system_config enable row level security;
-create policy "Solo admins" on public.system_config for all using (true);`}
-        </pre>
-      </div>
     </>
   )
 }

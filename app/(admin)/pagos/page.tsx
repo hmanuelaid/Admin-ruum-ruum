@@ -45,6 +45,21 @@ function money(v: number | null) {
   return v != null ? `$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2 })}` : '—'
 }
 
+async function postAdminOperation(path: string, payload: unknown) {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const data = await response.json().catch(() => ({}))
+
+  if (!response.ok) {
+    throw new Error(typeof data.error === 'string' ? data.error : 'No se pudo completar la operación')
+  }
+
+  return data
+}
+
 // ── Componente ─────────────────────────────────────────────────────────────────
 export default function PagosPage() {
   const router = useRouter()
@@ -134,54 +149,55 @@ export default function PagosPage() {
   // ── Cambiar estatus individual ─────────────────────────────────────────────
   async function handleStatusChange(payId: string, newStatus: string) {
     setUpdating(payId)
-    const supabase = createClient()
-    const extra = newStatus === 'pagado' ? { paid_at: new Date().toISOString() } : {}
-
-    const { error } = await supabase
-      .from('payments')
-      .update({ status: newStatus, ...extra })
-      .eq('id', payId)
-
-    if (error) {
-      showToast(`Error: ${error.message}`)
-    } else {
+    const paidAt = newStatus === 'pagado' ? new Date().toISOString() : null
+    try {
+      await postAdminOperation('/api/admin/payments/status', {
+        paymentIds: [payId],
+        status: newStatus,
+      })
       setPayments(prev => prev.map(p =>
-        p.id === payId ? { ...p, status: newStatus, ...(newStatus === 'pagado' ? { paid_at: new Date().toISOString() } : {}) } : p
+        p.id === payId ? { ...p, status: newStatus, ...(paidAt ? { paid_at: paidAt } : {}) } : p
       ))
       showToast(`✅ Pago marcado como ${STATUS_LABELS[newStatus] ?? newStatus}`)
+    } catch (error) {
+      showToast(`Error: ${error instanceof Error ? error.message : 'operación fallida'}`)
+    } finally {
+      setUpdating(null)
     }
-    setUpdating(null)
   }
 
   // ── Acciones en lote ───────────────────────────────────────────────────────
   async function handleBulkAction(newStatus: PayStatus) {
     if (selectedIds.size === 0) return
     setBulkSaving(true)
-    const supabase = createClient()
     const ids = [...selectedIds]
-    const extra = newStatus === 'pagado' ? { paid_at: new Date().toISOString() } : {}
+    const paidAt = newStatus === 'pagado' ? new Date().toISOString() : null
 
-    const { error } = await supabase
-      .from('payments')
-      .update({ status: newStatus, ...extra })
-      .in('id', ids)
-
-    if (error) {
-      showToast(`Error: ${error.message}`)
-    } else {
+    try {
+      await postAdminOperation('/api/admin/payments/status', {
+        paymentIds: ids,
+        status: newStatus,
+      })
       setPayments(prev => prev.map(p =>
-        ids.includes(p.id) ? { ...p, status: newStatus } : p
+        ids.includes(p.id) ? { ...p, status: newStatus, ...(paidAt ? { paid_at: paidAt } : {}) } : p
       ))
       setSelectedIds(new Set())
       showToast(`✅ ${ids.length} pagos marcados como ${STATUS_LABELS[newStatus]}`)
+    } catch (error) {
+      showToast(`Error: ${error instanceof Error ? error.message : 'operación fallida'}`)
+    } finally {
+      setBulkSaving(false)
     }
-    setBulkSaving(false)
   }
 
   function toggleSelect(id: string) {
     setSelectedIds(prev => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
       return next
     })
   }

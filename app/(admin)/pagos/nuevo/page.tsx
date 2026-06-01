@@ -76,15 +76,15 @@ export default function NuevoPagoPage() {
     void loadOpts()
   }, [])
 
-  // Auto-seleccionar conductor/usuario según tipo
-  useEffect(() => {
-    if (type === 'pago_conductor' || type === 'bono' || type === 'penalizacion') {
+  function handleTypeChange(nextType: string) {
+    setType(nextType)
+    if (nextType === 'pago_conductor' || nextType === 'bono' || nextType === 'penalizacion') {
       setUserId('')
     }
-    if (type === 'cobro_usuario' || type === 'reembolso') {
+    if (nextType === 'cobro_usuario' || nextType === 'reembolso') {
       setDriverId('')
     }
-  }, [type])
+  }
 
   // ── Validación ─────────────────────────────────────────────────────────────
   const isValid =
@@ -160,7 +160,7 @@ export default function NuevoPagoPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="field-group">
               <label className="field-label">Tipo *</label>
-              <select className="field-input" value={type} onChange={e => setType(e.target.value)}>
+              <select className="field-input" value={type} onChange={e => handleTypeChange(e.target.value)}>
                 {TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>

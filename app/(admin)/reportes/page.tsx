@@ -163,7 +163,9 @@ export default function ReportesPage() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { void loadReport(range) }, [range, loadReport])
+  useEffect(() => {
+    queueMicrotask(() => void loadReport(range))
+  }, [range, loadReport])
 
   function handleExport() {
     setExporting(true)

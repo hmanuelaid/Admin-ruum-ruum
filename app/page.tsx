@@ -1,15 +1,9 @@
-'use client'
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import { useAuthStore } from '@/lib/store'
+import { redirect } from 'next/navigation'
+import { getVerifiedAdmin } from '@/lib/auth/server'
 
-export default function Home() {
-  const router = useRouter()
-  const { isAuthenticated } = useAuthStore()
+export const dynamic = 'force-dynamic'
 
-  useEffect(() => {
-    router.replace(isAuthenticated ? '/dashboard' : '/login')
-  }, [isAuthenticated, router])
-
-  return null
+export default async function Home() {
+  const admin = await getVerifiedAdmin()
+  redirect(admin ? '/dashboard' : '/login')
 }
