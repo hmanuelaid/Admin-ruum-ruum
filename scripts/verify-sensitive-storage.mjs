@@ -1,10 +1,11 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 const root = process.cwd()
+const migrationsRoot = join(root, '..', 'ruum-ruum-database', 'supabase', 'migrations')
 
 function read(path) {
-  return readFileSync(join(root, path), 'utf8')
+  return readFileSync(isAbsolute(path) ? path : join(root, path), 'utf8')
 }
 
 function walk(dir) {
@@ -17,7 +18,7 @@ function walk(dir) {
 }
 
 const storage = read(join('lib', 'storage.ts'))
-const migration = read(join('supabase', 'migrations', '20260601030000_private_sensitive_storage.sql'))
+const migration = read(join(migrationsRoot, '20260601030000_private_sensitive_storage.sql'))
 const documentUploader = read(join('components', 'ui', 'DocumentUploader.tsx'))
 const documentos = read(join('app', '(admin)', 'documentos', 'page.tsx'))
 const evidence = read(join('app', '(admin)', 'evidencia', 'page.tsx'))

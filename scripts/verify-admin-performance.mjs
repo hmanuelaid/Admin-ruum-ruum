@@ -1,27 +1,28 @@
 import { readFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 const root = process.cwd()
+const migrationsRoot = join(root, '..', 'ruum-ruum-database', 'supabase', 'migrations')
 
 function read(path) {
-  return readFileSync(join(root, path), 'utf8')
+  return readFileSync(isAbsolute(path) ? path : join(root, path), 'utf8')
 }
 
 function exists(path) {
-  return existsSync(join(root, path))
+  return existsSync(isAbsolute(path) ? path : join(root, path))
 }
 
 const dashboard = read(join('app', '(admin)', 'dashboard', 'page.tsx'))
 const documentos = read(join('app', '(admin)', 'documentos', 'page.tsx'))
 const pagos = read(join('app', '(admin)', 'pagos', 'page.tsx'))
 const permissions = read(join('lib', 'auth', 'permissions.ts'))
-const migration = read(join('supabase', 'migrations', '20260601040000_admin_performance_pagination.sql'))
+const migration = read(join(migrationsRoot, '20260601040000_admin_performance_pagination.sql'))
 const dashboardRoute = read(join('app', 'api', 'admin', 'dashboard', 'route.ts'))
 const documentsRoute = read(join('app', 'api', 'admin', 'documents', 'route.ts'))
 const paymentsRoute = read(join('app', 'api', 'admin', 'payments', 'route.ts'))
 
 const checks = [
-  ['performance migration exists', exists(join('supabase', 'migrations', '20260601040000_admin_performance_pagination.sql'))],
+  ['performance migration exists in central database repo', exists(join(migrationsRoot, '20260601040000_admin_performance_pagination.sql'))],
   ['dashboard summary RPC exists', /create or replace function public\.get_admin_dashboard_summary/.test(migration)],
   ['document pagination RPCs exist', /get_admin_documents_page/.test(migration) && /get_admin_documents_total/.test(migration)],
   ['payment pagination RPCs exist', /get_admin_payments_page/.test(migration) && /get_admin_payments_total/.test(migration)],

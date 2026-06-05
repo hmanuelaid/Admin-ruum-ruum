@@ -1,19 +1,20 @@
 import { readFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 const root = process.cwd()
+const migrationsRoot = join(root, '..', 'ruum-ruum-database', 'supabase', 'migrations')
 
 function read(path) {
-  return readFileSync(join(root, path), 'utf8')
+  return readFileSync(isAbsolute(path) ? path : join(root, path), 'utf8')
 }
 
 function exists(path) {
-  return existsSync(join(root, path))
+  return existsSync(isAbsolute(path) ? path : join(root, path))
 }
 
 const empresas = read(join('app', '(admin)', 'empresas', 'page.tsx'))
 const permissions = read(join('lib', 'auth', 'permissions.ts'))
-const migration = read(join('supabase', 'migrations', '20260601050000_admin_companies.sql'))
+const migration = read(join(migrationsRoot, '20260601050000_admin_companies.sql'))
 const companiesRoute = read(join('app', 'api', 'admin', 'companies', 'route.ts'))
 const companyIdRoute = read(join('app', 'api', 'admin', 'companies', '[id]', 'route.ts'))
 const layout = read(join('app', '(admin)', 'layout.tsx'))
@@ -23,7 +24,7 @@ const mobileNav = read(join('components', 'layout', 'MobileAdminNav.tsx'))
 const css = read(join('app', 'globals.css'))
 
 const checks = [
-  ['companies migration exists', exists(join('supabase', 'migrations', '20260601050000_admin_companies.sql'))],
+  ['companies migration exists in central database repo', exists(join(migrationsRoot, '20260601050000_admin_companies.sql'))],
   ['companies table is created', /create table if not exists public\.companies/.test(migration)],
   ['companies RLS is enabled', /alter table public\.companies enable row level security/.test(migration)],
   ['companies policies are role based', /current_admin_role\(\) in \('super_admin', 'admin_operativo', 'comercial'\)/.test(migration)],

@@ -1,10 +1,6 @@
 // ─── lib/types.ts ─────────────────────────────────────────────────────────────
-
-export type TripStatus =
-  | 'solicitud_recibida' | 'pendiente_revision' | 'pendiente_asignacion'
-  | 'conductor_asignado' | 'conductor_en_camino' | 'recoleccion_proceso'
-  | 'evidencia_inicial_pendiente' | 'traslado_curso' | 'entrega_proceso'
-  | 'evidencia_final_pendiente' | 'finalizado' | 'cancelado' | 'incidente'
+import type { TripStatus } from '@ruum/types'
+export type { TripStatus } from '@ruum/types'
 
 export type DriverStatus =
   | 'pendiente_validacion' | 'activo' | 'disponible' | 'no_disponible'

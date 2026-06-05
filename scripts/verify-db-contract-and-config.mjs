@@ -1,14 +1,16 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative } from 'node:path'
+import { isAbsolute, join, relative } from 'node:path'
 
 const root = process.cwd()
+const databaseRoot = join(root, '..', 'ruum-ruum-database')
+const migrationsRoot = join(databaseRoot, 'supabase', 'migrations')
 
 function read(path) {
-  return readFileSync(join(root, path), 'utf8')
+  return readFileSync(isAbsolute(path) ? path : join(root, path), 'utf8')
 }
 
 function exists(path) {
-  return existsSync(join(root, path))
+  return existsSync(isAbsolute(path) ? path : join(root, path))
 }
 
 function walk(dir) {
@@ -35,7 +37,7 @@ const configPage = read(join('app', '(admin)', 'configuracion', 'page.tsx'))
 const configRoute = read(join('app', 'api', 'admin', 'system-config', 'route.ts'))
 const permissions = read(join('lib', 'auth', 'permissions.ts'))
 const configContract = read(join('lib', 'config', 'system-config.ts'))
-const migration = read(join('supabase', 'migrations', '20260601060000_secure_system_config_validation.sql'))
+const migration = read(join(migrationsRoot, '20260601060000_secure_system_config_validation.sql'))
 
 const checks = [
   ['Supabase generated types are versioned', exists(join('lib', 'database.types.ts'))],
@@ -51,7 +53,7 @@ const checks = [
   ['config page uses server API', configPage.includes('/api/admin/system-config')],
   ['config page blocks saving when source is unavailable', configPage.includes('sourceAvailable') && configPage.includes('!sourceAvailable')],
   ['config page renders operational source error', configPage.includes('configError') && configPage.includes('Configuración no disponible para edición')],
-  ['config validation migration exists', exists(join('supabase', 'migrations', '20260601060000_secure_system_config_validation.sql'))],
+  ['config validation migration exists in central database repo', exists(join(migrationsRoot, '20260601060000_secure_system_config_validation.sql'))],
   ['config validation function exists', /create or replace function public\.is_valid_system_config_value/.test(migration)],
   ['config check constraint exists', /system_config_known_key_value_check/.test(migration) && /not valid/i.test(migration)],
   ['config write RPC exists', /create or replace function public\.upsert_system_config_values/.test(migration)],

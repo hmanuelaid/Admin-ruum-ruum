@@ -1,17 +1,18 @@
 import { readFileSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 const root = process.cwd()
+const migrationsRoot = join(root, '..', 'ruum-ruum-database', 'supabase', 'migrations')
 
 function read(path) {
-  return readFileSync(join(root, path), 'utf8')
+  return readFileSync(isAbsolute(path) ? path : join(root, path), 'utf8')
 }
 
 const viajes = read(join('app', '(admin)', 'viajes', 'page.tsx'))
 const viajeDetail = read(join('app', '(admin)', 'viajes', '[id]', 'page.tsx'))
 const documentos = read(join('app', '(admin)', 'documentos', 'page.tsx'))
 const pagos = read(join('app', '(admin)', 'pagos', 'page.tsx'))
-const migration = read(join('supabase', 'migrations', '20260601020000_atomic_admin_operations.sql'))
+const migration = read(join(migrationsRoot, '20260601020000_atomic_admin_operations.sql'))
 
 const requiredFiles = [
   join('app', 'api', 'admin', 'trips', 'assign-driver', 'route.ts'),
