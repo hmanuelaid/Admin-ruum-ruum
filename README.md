@@ -122,3 +122,8 @@ npm run audit:high             # npm audit desde severidad high
 - `npm ci` instala sin errores.
 - `npm run lint`, `npm run typecheck`, `npm test`, `npm run build` y `npm run audit:high` revisados.
 - Probar login admin, dashboard, asignacion de conductor, cambio de estatus, revision de documentos, pagos y bitacora.
+
+## Crons disponibles (agregar a vercel.json para activar)
+
+- `/api/admin/jobs/unassigned-trips` → `*/5 * * * *`
+- `/api/admin/jobs/document-expiry` → `0 8 * * *`
