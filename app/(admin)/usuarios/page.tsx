@@ -26,6 +26,21 @@ interface AppUserRow {
   company: string | null
 }
 
+interface AppUserDbRow {
+  id: string
+  name: string | null
+  email: string | null
+  phone: string | null
+  type: UserType | string | null
+  status: UserStatus | string | null
+  created_at: string | null
+  razon_social: string | null
+}
+
+interface TripUserRow {
+  user_id: string | null
+}
+
 export default function UsuariosPage() {
   const router = useRouter()
   const [search, setSearch] = useState('')
@@ -46,7 +61,7 @@ export default function UsuariosPage() {
 
       const { data, error: loadError } = await supabase
         .from('app_users')
-        .select('id, name, email, phone, type, status, trips_count, created_at, company')
+        .select('id, name, email, phone, type, status, created_at, razon_social')
         .order('created_at', { ascending: false })
 
       if (cancelled) return
@@ -56,7 +71,31 @@ export default function UsuariosPage() {
         setUsers([])
         showToast(`No se pudieron cargar usuarios: ${loadError.message}`)
       } else {
-        setUsers((data ?? []) as AppUserRow[])
+        const rows = (data ?? []) as AppUserDbRow[]
+        const userIds = rows.map(user => user.id)
+        const tripCounts = new Map<string, number>()
+
+        if (userIds.length > 0) {
+          const { data: tripRows, error: tripsError } = await supabase
+            .from('trips')
+            .select('user_id')
+            .in('user_id', userIds)
+
+          if (tripsError) {
+            showToast(`No se pudo calcular viajes por usuario: ${tripsError.message}`)
+          } else {
+            for (const trip of (tripRows ?? []) as TripUserRow[]) {
+              if (!trip.user_id) continue
+              tripCounts.set(trip.user_id, (tripCounts.get(trip.user_id) ?? 0) + 1)
+            }
+          }
+        }
+
+        setUsers(rows.map(user => ({
+          ...user,
+          company: user.razon_social,
+          trips_count: tripCounts.get(user.id) ?? 0,
+        })))
       }
 
       setLoading(false)
@@ -70,10 +109,22 @@ export default function UsuariosPage() {
         event: '*', schema: 'public', table: 'app_users',
       }, payload => {
         if (payload.eventType === 'INSERT') {
-          setUsers(prev => [payload.new as AppUserRow, ...prev])
+          const user = payload.new as AppUserDbRow
+          setUsers(prev => [{
+            ...user,
+            company: user.razon_social,
+            trips_count: 0,
+          }, ...prev])
         } else if (payload.eventType === 'UPDATE') {
+          const updatedUser = payload.new as AppUserDbRow
           setUsers(prev => prev.map(user =>
-            user.id === (payload.new as AppUserRow).id ? payload.new as AppUserRow : user
+            user.id === updatedUser.id
+              ? {
+                  ...updatedUser,
+                  company: updatedUser.razon_social,
+                  trips_count: user.trips_count,
+                }
+              : user
           ))
         } else if (payload.eventType === 'DELETE') {
           setUsers(prev => prev.filter(user => user.id !== (payload.old as AppUserRow).id))

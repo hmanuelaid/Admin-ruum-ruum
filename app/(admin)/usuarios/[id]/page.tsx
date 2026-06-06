@@ -13,8 +13,19 @@ interface UserDetail {
   phone: string | null
   type: string | null
   status: string | null
-  trips_count: number | null
   company: string | null
+  created_at: string | null
+  notes: string | null
+}
+
+interface UserDbDetail {
+  id: string
+  name: string | null
+  email: string | null
+  phone: string | null
+  type: string | null
+  status: string | null
+  razon_social: string | null
   created_at: string | null
   notes: string | null
 }
@@ -65,7 +76,7 @@ export default function UsuarioDetailPage() {
       const [userRes, tripsRes] = await Promise.all([
         supabase
           .from('app_users')
-          .select('id, name, email, phone, type, status, trips_count, company, created_at, notes')
+          .select('id, name, email, phone, type, status, razon_social, created_at, notes')
           .eq('id', id)
           .single(),
         supabase
@@ -82,9 +93,13 @@ export default function UsuarioDetailPage() {
         return
       }
 
-      const u = userRes.data as UserDetail
-      setUser(u)
-      setNotes(u.notes ?? '')
+      const u = userRes.data as UserDbDetail
+      const userDetail = {
+        ...u,
+        company: u.razon_social,
+      }
+      setUser(userDetail)
+      setNotes(userDetail.notes ?? '')
       setTrips((tripsRes.data ?? []) as UserTrip[])
       setLoading(false)
     }
