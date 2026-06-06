@@ -32,6 +32,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Check Types Drift
+        run: npm run test:types-drift
+
       - name: Tests
         run: npm test
 

@@ -18,6 +18,10 @@ const adminActions = read(join('lib', 'api', 'admin-actions.ts'))
 const adminLayout = read(join('app', '(admin)', 'layout.tsx'))
 const sidebar = read(join('components', 'layout', 'SideBar.tsx'))
 const packageJson = JSON.parse(read('package.json'))
+const unassignedTripsJobPath = join('app', 'api', 'admin', 'jobs', 'unassigned-trips', 'route.ts')
+const unassignedTripsJob = exists(unassignedTripsJobPath) ? read(unassignedTripsJobPath) : ''
+const documentExpiryJobPath = join('app', 'api', 'admin', 'jobs', 'document-expiry', 'route.ts')
+const documentExpiryJob = exists(documentExpiryJobPath) ? read(documentExpiryJobPath) : ''
 
 const apiRoutes = [
   [join('app', 'api', 'admin', 'dashboard', 'route.ts'), 'dashboard.read'],
@@ -76,6 +80,28 @@ const checks = [
   ['admin layout passes verified nav groups to sidebar', adminLayout.includes('getVisibleAdminNav(admin.role)') && adminLayout.includes('<Sidebar navGroups={navGroups} />')],
   ['sidebar only renders provided nav groups', sidebar.includes('navGroups: VisibleAdminNavGroup[]') && sidebar.includes('if (navGroups.length === 0) return null')],
   ['sidebar does not read client auth store', !sidebar.includes('useAdminStore')],
+  ['unassigned trips job route exists', exists(unassignedTripsJobPath)],
+  [
+    'unassigned trips job authorizes before service operations',
+    unassignedTripsJob.indexOf('if (!isAuthorized(req))') !== -1 &&
+      unassignedTripsJob.indexOf('if (!isAuthorized(req))') < unassignedTripsJob.indexOf('const supabase = createSupabaseServiceClient()') &&
+      unassignedTripsJob.indexOf('if (!isAuthorized(req))') < unassignedTripsJob.indexOf("rpc('check_unassigned_trips'"),
+  ],
+  ['unassigned trips job uses cron secret', unassignedTripsJob.includes('process.env.CRON_SECRET')],
+  ['unassigned trips job calls check_unassigned_trips RPC', unassignedTripsJob.includes("rpc('check_unassigned_trips'")],
+  ['unassigned trips cron is configured', exists('vercel.json') && read('vercel.json').includes('/api/admin/jobs/unassigned-trips')],
+  ['document expiry job route exists', exists(documentExpiryJobPath)],
+  [
+    'document expiry job authorizes before service operations',
+    documentExpiryJob.indexOf('if (!isAuthorized(req))') !== -1 &&
+      documentExpiryJob.indexOf('if (!isAuthorized(req))') < documentExpiryJob.indexOf('const supabase = createSupabaseServiceClient()') &&
+      documentExpiryJob.indexOf('if (!isAuthorized(req))') < documentExpiryJob.indexOf("rpc('expire_overdue_documents'"),
+  ],
+  ['document expiry job uses cron secret', documentExpiryJob.includes('process.env.CRON_SECRET')],
+  ['document expiry job expires documents before notification toggle', documentExpiryJob.indexOf("rpc('expire_overdue_documents'") !== -1 && documentExpiryJob.indexOf("rpc('expire_overdue_documents'") < documentExpiryJob.indexOf("item.key === 'notif_doc_vencido'")],
+  ['document expiry job calls expiring documents RPC', documentExpiryJob.includes("rpc('get_expiring_driver_documents'")],
+  ['document expiry cron is configured', exists('vercel.json') && read('vercel.json').includes('/api/admin/jobs/document-expiry')],
+  ['cron env vars are documented', read('.env.example').includes('CRON_SECRET=') && read('.env.example').includes('SUPABASE_SERVICE_ROLE_KEY=')],
   ...apiRouteChecks,
 ]
 

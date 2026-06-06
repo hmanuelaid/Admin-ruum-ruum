@@ -1,3 +1,4 @@
+// migrations-hash: fb83f2b9d4594284
 export type Json =
   | string
   | number
@@ -938,10 +939,19 @@ export type Database = {
         Args: { p_driver_id: string; p_trip_id: string }
         Returns: Json
       }
+      check_unassigned_trips: {
+        Args: { p_minutes?: number }
+        Returns: {
+          created_at: string
+          minutes_waiting: number
+          trip_id: string
+        }[]
+      }
       current_admin_id: { Args: never; Returns: string }
       current_admin_role: { Args: never; Returns: string }
       current_app_user_id: { Args: never; Returns: string }
       current_driver_id: { Args: never; Returns: string }
+      expire_overdue_documents: { Args: never; Returns: Json }
       generate_trip_id: { Args: never; Returns: string }
       get_admin_companies_summary: { Args: never; Returns: Json }
       get_admin_dashboard_summary: { Args: never; Returns: Json }
@@ -1003,6 +1013,16 @@ export type Database = {
       get_admin_payments_total: {
         Args: { p_search?: string; p_status?: string; p_type?: string }
         Returns: number
+      }
+      get_expiring_driver_documents: {
+        Args: { p_days?: number }
+        Returns: {
+          days_until_expiry: number
+          doc_type: string
+          document_id: string
+          driver_id: string
+          expires_at: string
+        }[]
       }
       is_active_admin: { Args: never; Returns: boolean }
       is_admin: { Args: never; Returns: boolean }

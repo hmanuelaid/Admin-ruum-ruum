@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/admin/jobs/unassigned-trips",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/admin/jobs/document-expiry",
+      "schedule": "0 8 * * *"
+    }
+  ]
+}

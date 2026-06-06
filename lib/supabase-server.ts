@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { createClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 
 function getSupabaseEnv() {
@@ -30,6 +31,22 @@ export async function createSupabaseServerClient() {
           // Server Components cannot set cookies; Proxy refreshes sessions.
         }
       },
+    },
+  })
+}
+
+export function createSupabaseServiceClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+  if (!url || !serviceRoleKey) {
+    throw new Error('Missing Supabase service role environment variables')
+  }
+
+  return createClient(url, serviceRoleKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
     },
   })
 }
