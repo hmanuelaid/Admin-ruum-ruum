@@ -31,14 +31,13 @@ function createSupabaseProxyClient(request: NextRequest) {
       getAll() {
         return request.cookies.getAll()
       },
-      setAll(cookiesToSet, headers) {
+      // FIX: setAll solo acepta un parámetro según SetAllCookies de @supabase/ssr@^0.10.x
+      // El segundo param `headers` no existe en el tipo y causaba error de build
+      setAll(cookiesToSet) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
         response = NextResponse.next({ request })
         cookiesToSet.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, options)
-        })
-        Object.entries(headers).forEach(([key, value]) => {
-          response.headers.set(key, value)
         })
       },
     },

@@ -1,4 +1,4 @@
-// migrations-hash: fb83f2b9d4594284
+// migrations-hash: 0581b948c332dfc4
 export type Json =
   | string
   | number
@@ -186,8 +186,10 @@ export type Database = {
       }
       documents: {
         Row: {
+          content_validated_at: string | null
           created_at: string
           expires_at: string | null
+          file_size: number | null
           file_size_bytes: number | null
           id: string
           mime_type: string | null
@@ -196,6 +198,7 @@ export type Database = {
           owner_name: string | null
           owner_type: string
           reviewed_by: string | null
+          scan_status: string
           status: Database["public"]["Enums"]["doc_status"]
           storage_path: string | null
           type: string
@@ -204,8 +207,10 @@ export type Database = {
           url: string | null
         }
         Insert: {
+          content_validated_at?: string | null
           created_at?: string
           expires_at?: string | null
+          file_size?: number | null
           file_size_bytes?: number | null
           id?: string
           mime_type?: string | null
@@ -214,6 +219,7 @@ export type Database = {
           owner_name?: string | null
           owner_type: string
           reviewed_by?: string | null
+          scan_status?: string
           status?: Database["public"]["Enums"]["doc_status"]
           storage_path?: string | null
           type: string
@@ -222,8 +228,10 @@ export type Database = {
           url?: string | null
         }
         Update: {
+          content_validated_at?: string | null
           created_at?: string
           expires_at?: string | null
+          file_size?: number | null
           file_size_bytes?: number | null
           id?: string
           mime_type?: string | null
@@ -232,6 +240,7 @@ export type Database = {
           owner_name?: string | null
           owner_type?: string
           reviewed_by?: string | null
+          scan_status?: string
           status?: Database["public"]["Enums"]["doc_status"]
           storage_path?: string | null
           type?: string
